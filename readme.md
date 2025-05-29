@@ -1,3 +1,4 @@
+python = 3.10
 Install Dependencies:Create a virtual environment and install required packages:
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
