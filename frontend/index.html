@@ -6,7 +6,6 @@
     <title>OpenAI Image Analysis Studio</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
-        /* CSS styles unchanged from original code to maintain appearance */
         * {
             margin: 0;
             padding: 0;
@@ -349,7 +348,7 @@
             display: none;
             justify-content: center;
             align-items: center;
-            z-index:1000;
+            z-index: 1000;
         }
 
         .loading-content {
@@ -469,10 +468,8 @@
             <!-- Configuration Panel -->
             <div class="panel">
                 <h2>⚙️ Analysis Settings</h2>
-                <div class="form-group">
-                    <label>OpenAI API Key</label>
-                    <input type="password" id="apiKey" class="form-control" placeholder="sk-...">
-                </div>
+                
+                
                 <div class="toggle-switch">
                     <span>Analysis Mode:</span>
                     <label class="switch">
@@ -483,11 +480,11 @@
                 </div>
                 <div class="form-group">
                     <label>User Prompt</label>
-                    <textarea id="userPrompt" class="form-control" rows="3" placeholder="Describe what you want to analyze...">Generate concise metadata for a wedding event from these photos. Return concise JSON.</textarea>
+                    <textarea id="userPrompt" class="form-control" rows="3" placeholder="Describe what you want to analyze...">Generate batch-level metadata for a wedding event from these photos. Include event name, subtype, theme, title, location, and activities with times based on EXIF or visual cues.</textarea>
                 </div>
                 <div class="form-group">
                     <label>System Prompt</label>
-                    <textarea id="systemPrompt" class="form-control" rows="4" placeholder="System instructions...">Generate concise JSON metadata for a wedding event from images. Return concise JSON with:
+                    <textarea id="systemPrompt" class="form-control" rows="4" placeholder="System instructions...">Generate batch-level metadata for a wedding event from images. Return concise JSON with:
 {
   "eventType": "wedding",
   "eventMetadata": {
@@ -512,11 +509,11 @@
       }
     }
   ]
-}</textarea>
-                </div>
-                <div class="form-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="maxTokens" class="form-control" value="600" min="100" max="1000">
+}
+Rules:
+- Focus on batch-level insights.
+- Ensure eventTitle is specific.
+- Use hh:mm AM/PM for estimatedTime.</textarea>
                 </div>
                 <div class="form-group">
                     <label>Detail Level</label>
@@ -583,21 +580,48 @@
                 this.images = [];
                 this.results = null;
                 this.apiBaseUrl = "http://localhost:8000";
-                this.maxImages = 10; // Aligned with backend
+                this.maxImages = 10;
+                this.apiKeySet = false;
+                this.maxTokens = 600;
                 this.initializeEventListeners();
+                this.fetchConfig();
+            }
+
+            async fetchConfig() {
+                try {
+                    const response = await fetch(`${this.apiBaseUrl}/config`);
+                    if (!response.ok) throw new Error('Failed to fetch config');
+                    const config = await response.json();
+                    this.apiKeySet = config.api_key_status.api_key_set;
+                    this.maxTokens = config.max_tokens;
+                    document.getElementById('apiKeyStatus').textContent = 
+                        this.apiKeySet ? `API Key Set (starts with ${config.api_key_status.api_key_prefix})` : 'API Key Not Set';
+                    document.getElementById('maxTokens').textContent = this.maxTokens;
+                    this.validateForm();
+                } catch (error) {
+                    document.getElementById('apiKeyStatus').textContent = 'Error fetching API key status';
+                    document.getElementById('maxTokens').textContent = 'Error fetching max tokens';
+                    this.showError('Failed to load configuration: ' + error.message);
+                }
             }
 
             initializeEventListeners() {
                 const uploadArea = document.getElementById('uploadArea');
                 const fileInput = document.getElementById('fileInput');
                 uploadArea.addEventListener('click', () => fileInput.click());
-                uploadArea.addEventListener('dragover', e => e.preventDefault() || uploadArea.classList.add('dragover'));
-                uploadArea.addEventListener('dragleave', e => e.preventDefault() || uploadArea.classList.remove('dragover'));
+                uploadArea.addEventListener('dragover', e => {
+                    e.preventDefault();
+                    uploadArea.classList.add('dragover');
+                });
+                uploadArea.addEventListener('dragleave', e => {
+                    e.preventDefault();
+                    uploadArea.classList.remove('dragover');
+                });
                 uploadArea.addEventListener('drop', this.handleDrop.bind(this));
                 fileInput.addEventListener('change', e => this.processFiles(Array.from(e.target.files)));
                 document.getElementById('analysisMode').addEventListener('change', this.toggleAnalysisMode.bind(this));
                 document.getElementById('analyzeBtn').addEventListener('click', this.startAnalysis.bind(this));
-                ['apiKey', 'systemPrompt', 'maxTokens', 'detailLevel', 'modelSelect'].forEach(id => {
+                ['userPrompt', 'systemPrompt', 'detailLevel', 'modelSelect'].forEach(id => {
                     document.getElementById(id).addEventListener('input', this.validateForm.bind(this));
                 });
                 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -686,11 +710,10 @@
             }
 
             validateForm() {
-                const apiKey = document.getElementById('apiKey').value.trim();
+                const userPrompt = document.getElementById('userPrompt').value.trim();
                 const systemPrompt = document.getElementById('systemPrompt').value.trim();
-                const maxTokens = parseInt(document.getElementById('maxTokens').value);
                 document.getElementById('analyzeBtn').disabled = 
-                    !(apiKey && this.images.length > 0 && systemPrompt && maxTokens >= 100 && maxTokens <= 1000);
+                    !(this.apiKeySet && this.images.length > 0 && userPrompt && systemPrompt);
             }
 
             async startAnalysis() {
@@ -714,14 +737,12 @@
                 });
                 formData.append('user_prompt', document.getElementById('userPrompt').value);
                 formData.append('system_prompt', document.getElementById('systemPrompt').value);
-                formData.append('max_tokens', document.getElementById('maxTokens').value);
                 let detailLevel = document.getElementById('detailLevel').value;
                 if (detailLevel === 'auto') {
                     detailLevel = this.images.length === 1 ? 'high' : 'low';
                 }
                 formData.append('detail_level', detailLevel);
                 formData.append('event_level', document.getElementById('analysisMode').checked);
-                formData.append('api_key', document.getElementById('apiKey').value);
                 formData.append('model', document.getElementById('modelSelect').value);
                 const response = await fetch(`${this.apiBaseUrl}/analyze`, {
                     method: 'POST',
@@ -797,9 +818,13 @@
                             <div class="stat-value">${this.results.time_taken.toFixed(2)}s</div>
                             <div>Time</div>
                         </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${this.results.token_usage.total_tokens}</div>
+                            <div>Total Tokens</div>
+                        </div>
                     `;
                 } else {
-                    const avgQuality = this.results.analyses.reduce((sum, a) => sum + parseFloat(a.quality_metrics.overall_quality.split('/')[0]), 0) / this.results.analyses.length;
+                    const avgQuality = this.results.analyses.reduce((sum, a) => sum + a.quality_score, 0) / this.results.analyses.length;
                     statsGrid.innerHTML = `
                         <div class="stat-card">
                             <div class="stat-value">${this.results.analyses.length}</div>
@@ -812,6 +837,10 @@
                         <div class="stat-card">
                             <div class="stat-value">${this.results.time_taken.toFixed(2)}s</div>
                             <div>Time</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${this.results.token_usage.total_tokens}</div>
+                            <div>Total Tokens</div>
                         </div>
                     `;
                 }
@@ -828,7 +857,7 @@
                         labels: data.map(d => d.imageid.split('.')[0]),
                         datasets: [{
                             label: 'Quality Score',
-                            data: data.map(d => parseFloat(d.quality_metrics.overall_quality.split('/')[0])),
+                            data: data.map(d => d.quality_score),
                             backgroundColor: '#48bb78',
                             borderColor: '#2f855a',
                             borderWidth: 1
@@ -854,8 +883,8 @@
                 individualResults.innerHTML = '';
                 const data = this.results.type === 'event' ? this.results.image_analyses : this.results.analyses;
                 data.forEach(analysis => {
-                    const qualityScore = parseFloat(analysis.quality_metrics.overall_quality.split('/')[0]);
-                    const qualityClass = qualityScore >= 80 ? 'quality-excellent' : qualityScore >= 60 ? 'quality-good' : 'quality-poor';
+                    const qualityScore = analysis.quality_score;
+                    const qualityClass = qualityScore >= 80 ? 'quality-excellent' : qualityScore >= 60 ? 'quality-good' : qualityScore >= 50 ? 'quality-fair' : 'quality-poor';
                     const card = document.createElement('div');
                     card.className = 'analysis-card';
                     let analysisHtml = this.results.type === 'individual' && analysis.analysis ? this.renderObject(analysis.analysis) : '';
@@ -868,10 +897,12 @@
                         <p><strong>Overall:</strong> ${analysis.quality_metrics.overall_quality}</p>
                         <p><strong>Brightness:</strong> ${analysis.quality_metrics.brightness}</p>
                         <p><strong>Contrast:</strong> ${analysis.quality_metrics.contrast}</p>
+                        <p><strong>Sharpness:</strong> ${analysis.quality_metrics.sharpness}</p>
+                        <p><strong>Noise:</strong> ${analysis.quality_metrics.noise_estimate}</p>
                         <h4>EXIF Data:</h4>
-                        <p><strong>Date:</strong> ${analysis.exif_data?.datetime || 'N/A'}</p>
-                        <p><strong>Camera:</strong> ${analysis.exif_data?.camera_make || 'N/A'} ${analysis.exif_data?.camera_model || ''}</p>
-                        <p><strong>GPS:</strong> ${analysis.exif_data?.gps_latitude?.toFixed(6) || 'N/A'}, ${analysis.exif_data?.gps_longitude?.toFixed(6) || 'N/A'}</p>
+                        <p><strong>Date:</strong> ${analysis.exif_data.datetime || 'N/A'}</p>
+                        <p><strong>Camera:</strong> ${analysis.exif_data.camera_make || 'N/A'} ${analysis.exif_data.camera_model || ''}</p>
+                        <p><strong>GPS:</strong> ${analysis.exif_data.gps_latitude?.toFixed(6) || 'N/A'}, ${analysis.exif_data.gps_longitude?.toFixed(6) || 'N/A'}</p>
                         ${analysisHtml ? `<h4>Analysis:</h4>${analysisHtml}` : ''}
                     `;
                     individualResults.appendChild(card);
@@ -894,29 +925,23 @@
                 }
             }
 
+            renderJson() {
+                const jsonContent = document.getElementById('jsonContent');
+                jsonContent.innerHTML = `<code>${JSON.stringify(this.results, null, 2)}</code>`;
+            }
+
             renderObject(obj, depth = 0) {
                 if (!obj || typeof obj !== 'object') return `<p>${String(obj) || 'N/A'}</p>`;
                 let html = depth === 0 ? '' : '<ul style="margin-left: 20px;">';
                 for (const [key, value] of Object.entries(obj)) {
-                    if (Array.isArray(value)) {
-                        html += `<li><strong>${key}:</strong> <ul style="margin-left: 20px;">${value.map(item => `<li>${this.renderValue(item)}</li>`).join('')}</ul></li>`;
-                    } else if (typeof value === 'object' && value !== null) {
+                    if (typeof value === 'object' && value !== null) {
                         html += `<li><strong>${key}:</strong>${this.renderObject(value, depth + 1)}</li>`;
                     } else {
-                        html += `<li><strong>${key}:</strong> ${value ?? 'N/A'}</li>`;
+                        html += `<li><strong>${key}:</strong> ${String(value) || 'N/A'}</li>`;
                     }
                 }
                 html += depth === 0 ? '' : '</ul>';
                 return html;
-            }
-
-            renderValue(value) {
-                if (typeof value === 'object' && value !== null) return this.renderObject(value, 1);
-                return String(value) || 'N/A';
-            }
-
-            renderJson() {
-                document.getElementById('jsonContent').innerHTML = `<code>${JSON.stringify(this.results, null, 2)}</code>`;
             }
         }
 
