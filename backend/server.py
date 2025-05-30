@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import time
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import JSONResponse
@@ -10,6 +11,14 @@ from pydantic import BaseModel
 from image_analysis import OpenAIImageAnalyzer, ImageInput, OpenAIParams, ImageManipulationParams
 import os
 import httpx
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Access the OpenAI API key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY not found in .env file")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -31,15 +40,14 @@ app.add_middleware(
 AVAILABLE_MODELS = ["gpt-4.1", "gpt-4o", "gpt-4-turbo"]
 DEFAULT_MODEL = "gpt-4.1"  # Aligned with image_analysis.py
 VISION_DETAIL_LEVEL = "low"  # Aligned with image_analysis.py
+DEFAULT_MAX_TOKENS = 600  # Aligned with image_analysis.py
 
 # Pydantic model for request validation
 class AnalysisRequest(BaseModel):
     user_prompt: str
     system_prompt: str
-    max_tokens: int = 600  # Aligned with image_analysis.py
-    detail_level: str = VISION_DETAIL_LEVEL  # Default to low
+    detail_level: str = VISION_DETAIL_LEVEL
     event_level: bool = True
-    api_key: str
     model: str = DEFAULT_MODEL
 
 @app.get("/")
@@ -47,15 +55,22 @@ async def root():
     """Health check endpoint"""
     return {"message": "OpenAI Image Analysis API is running"}
 
+@app.get("/config")
+async def get_config():
+    """Return configuration values for the front-end"""
+    analyzer = OpenAIImageAnalyzer(api_key=OPENAI_API_KEY)
+    return {
+        "max_tokens": DEFAULT_MAX_TOKENS,
+        "api_key_status": analyzer.get_api_key_status()
+    }
+
 @app.post("/analyze")
 async def analyze_images(
     images: List[UploadFile] = File(...),
     user_prompt: str = Form(...),
     system_prompt: str = Form(...),
-    max_tokens: int = Form(600),  # Aligned with image_analysis.py
     detail_level: str = Form(VISION_DETAIL_LEVEL),
     event_level: bool = Form(True),
-    api_key: str = Form(...),
     model: str = Form(DEFAULT_MODEL)
 ):
     """Analyze uploaded images using OpenAI GPT-4 Vision with system prompt-defined schema"""
@@ -68,8 +83,6 @@ async def analyze_images(
             raise HTTPException(status_code=400, detail="No images provided")
         if len(images) > 10:
             raise HTTPException(status_code=400, detail="Maximum of 10 images allowed")
-        if not api_key:
-            raise HTTPException(status_code=400, detail="API key is required")
         if model not in AVAILABLE_MODELS:
             logger.warning(f"Invalid model {model}, using default {DEFAULT_MODEL}")
             model = DEFAULT_MODEL
@@ -87,11 +100,11 @@ async def analyze_images(
             ))
 
         # Initialize analyzer
-        analyzer = OpenAIImageAnalyzer(api_key=api_key)
+        analyzer = OpenAIImageAnalyzer(api_key=OPENAI_API_KEY)
 
         # Set analysis parameters aligned with image_analysis.py
         openai_params = OpenAIParams(
-            max_tokens=max_tokens,
+            max_tokens=DEFAULT_MAX_TOKENS,
             detail=detail_level,
             model=model,
             temperature=0.2,  # Aligned with image_analysis.py
