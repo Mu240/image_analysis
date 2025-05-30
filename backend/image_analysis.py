@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import base64
 import io
 import json
@@ -14,10 +15,14 @@ import asyncio
 import logging
 from functools import lru_cache
 import httpx
-from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Access the OpenAI API key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY not found in .env file")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -127,7 +132,7 @@ class ImageQualityScorer:
             return "Very Poor"
 
     @staticmethod
-    @lru_cache(maxsize=500)  # Increased from 200 for better caching
+    @lru_cache(maxsize=500)
     def calculate_sharpness(image_data: bytes) -> float:
         image = Image.open(io.BytesIO(image_data)).convert('L')
         np_image = np.array(image)
@@ -137,7 +142,7 @@ class ImageQualityScorer:
         return min(100, variance / 1000 * 100)
 
     @staticmethod
-    @lru_cache(maxsize=500)  # Increased from 200 for better caching
+    @lru_cache(maxsize=500)
     def calculate_noise_level(image_data: bytes) -> float:
         image = Image.open(io.BytesIO(image_data)).convert('L')
         np_image = np.array(image)
@@ -169,7 +174,7 @@ class ImageQualityScorer:
 class EXIFExtractor:
     """Extract and process EXIF metadata"""
     @staticmethod
-    @lru_cache(maxsize=500)  # Increased from 200 for better caching
+    @lru_cache(maxsize=500)
     def extract_exif_data(image_data: bytes) -> EXIFData:
         exif_data = EXIFData()
         try:
@@ -231,7 +236,7 @@ class ImageProcessor:
         return processed_image
 
     @staticmethod
-    def image_to_base64(image: Image.Image, quality: int = 40) -> str:  # Reduced quality from 50
+    def image_to_base64(image: Image.Image, quality: int = 40) -> str:
         buffer = io.BytesIO()
         image.save(buffer, format='JPEG', quality=quality, optimize=True)
         buffer.seek(0)
@@ -240,14 +245,19 @@ class ImageProcessor:
 class OpenAIImageAnalyzer:
     """Main integration class for OpenAI image analysis"""
 
-    def __init__(self):
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in .env file")
+    def __init__(self, api_key: str):
         self.client = openai.OpenAI(api_key=api_key)
+        self.api_key = api_key
         self.quality_scorer = ImageQualityScorer()
         self.exif_extractor = EXIFExtractor()
         self.image_processor = ImageProcessor()
+
+    def get_api_key_status(self) -> Dict[str, Any]:
+        """Return API key status for front-end"""
+        return {
+            "api_key_set": bool(self.api_key),
+            "api_key_prefix": self.api_key[:4] if self.api_key else None
+        }
 
     def load_images_from_paths(self, image_paths: Union[str, List[str]]) -> List[ImageInput]:
         if isinstance(image_paths, str):
@@ -633,7 +643,7 @@ Rules:
 - Use hh:mm AM/PM for estimatedTime.
 """
 
-    analyzer = OpenAIImageAnalyzer()
+    analyzer = OpenAIImageAnalyzer(api_key=OPENAI_API_KEY)
 
     print("=== EXIF EXTRACTION TEST ===")
     try:
