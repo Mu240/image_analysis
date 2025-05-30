@@ -1,83 +1,61 @@
-# Python-specific ignores
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-build/
-dist/
-*.egg-info/
-*.egg
-
-# Environment files
-.env
-*.env
+# Virtual environment
 venv/
 env/
-.venv/
+*.pyc
+__pycache__/
+
+# Environment variables
+.env
 
 # IDE and editor files
-.vscode/
 .idea/
 *.sublime-project
 *.sublime-workspace
+.vscode/
 
-# OS-specific files
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Logs
+# Build and distribution files
+build/
+dist/
+*.egg-info/
 *.log
-logs/
 
-# Dependency directories
-node_modules/
+# Python temporary files
+*.py[cod]
+*$py.class
 
-# Cache files
-*.cache
-pip-wheel-metadata/
-
-# Test and coverage reports
-.coverage
-coverage/
+# Test and coverage files
 htmlcov/
 .tox/
-.pytest_cache/
+.coverage
+.coverage.*
+nosetests.xml
+pytest_cache/
 
-# Sensitive files
-*.key
-*.pem
-*.crt
-*.cert
+# MacOS specific
+*.DS_Store
 
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.swp
-*~
+# Windows specific
+Thumbs.db
+ehthumbs.db
 
-# Virtual environment activation scripts
-bin/
-Scripts/
-
-# Ignore uploaded images or other user-generated content
+# Image and temporary files
+*.jpg
+*.jpeg
+*.png
+*.gif
+temp/
 uploads/
-images/
-media/
 
-# Ignore compiled or minified assets
-*.min.js
-*.min.css
+# Backend specific
+__pycache__/
+*.log
+server.log
+
+# Frontend build artifacts (if applicable)
+node_modules/
 dist/
 build/
-
-# Ignore API keys or configuration files with sensitive data
-config.json
-secrets.json
-*.secret
-
-# Explicitly track the specified project files
-!index.html
-!image_analysis.py
-!server.py
