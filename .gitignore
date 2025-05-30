@@ -1,0 +1,83 @@
+# Python-specific ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Environment files
+.env
+*.env
+venv/
+env/
+.venv/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Dependency directories
+node_modules/
+
+# Cache files
+*.cache
+pip-wheel-metadata/
+
+# Test and coverage reports
+.coverage
+coverage/
+htmlcov/
+.tox/
+.pytest_cache/
+
+# Sensitive files
+*.key
+*.pem
+*.crt
+*.cert
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Virtual environment activation scripts
+bin/
+Scripts/
+
+# Ignore uploaded images or other user-generated content
+uploads/
+images/
+media/
+
+# Ignore compiled or minified assets
+*.min.js
+*.min.css
+dist/
+build/
+
+# Ignore API keys or configuration files with sensitive data
+config.json
+secrets.json
+*.secret
+
+# Explicitly track the specified project files
+!index.html
+!image_analysis.py
+!server.py
