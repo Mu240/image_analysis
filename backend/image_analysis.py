@@ -15,23 +15,20 @@ import asyncio
 import logging
 from functools import lru_cache
 import httpx
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Access the OpenAI API key
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY not found in .env file")
+import psutil
+import piexif  # New library for better EXIF handling
+import exifread  # Alternative EXIF library
+from geopy.geocoders import Nominatim  # For reverse geocoding
+from config import (
+    OPENAI_API_KEY, AVAILABLE_MODELS, DEFAULT_MODEL, VISION_DETAIL_LEVEL,
+    QUALITY_RATIO, RESIZE_RATIO_SINGLE, RESIZE_RATIO_MULTIPLE,
+    MAX_WIDTH_SINGLE, MAX_HEIGHT_SINGLE, MAX_WIDTH_MULTIPLE, MAX_HEIGHT_MULTIPLE,
+    TEMPERATURE, PRESENCE_PENALTY, FREQUENCY_PENALTY, MAX_MEMORY_USAGE_MB
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Constants for model selection
-AVAILABLE_MODELS = ["gpt-4.1", "gpt-4o", "gpt-4-turbo"]
-DEFAULT_MODEL = "gpt-4.1"  # Matches the newest OpenAI model from May 13, 2024
-VISION_DETAIL_LEVEL = "low"  # Changed to low for token efficiency
 
 @dataclass
 class ImageInput:
@@ -42,29 +39,36 @@ class ImageInput:
 @dataclass
 class OpenAIParams:
     """OpenAI API parameters"""
-    max_tokens: int = 600  # Reduced from 800 for faster response
-    detail: str = "low"  # Set to low for token efficiency
+    max_tokens: int = 600
+    detail: str = VISION_DETAIL_LEVEL
     model: str = DEFAULT_MODEL
-    temperature: float = 0.2
-    presence_penalty: float = 0.1
-    frequency_penalty: float = 0.1
+    temperature: float = TEMPERATURE
+    presence_penalty: float = PRESENCE_PENALTY
+    frequency_penalty: float = FREQUENCY_PENALTY
 
 @dataclass
 class ImageManipulationParams:
     """Image processing parameters"""
-    quality_ratio: float = 0.4  # Reduced from 0.5 for smaller images
-    resize_ratio: float = 0.15  # Reduced from 0.2 for smaller images
-    max_width: int = 384  # Reduced from 512
-    max_height: int = 384  # Reduced from 512
+    quality_ratio: float = QUALITY_RATIO
+    resize_ratio: float = RESIZE_RATIO_SINGLE
+    max_width: int = MAX_WIDTH_SINGLE
+    max_height: int = MAX_HEIGHT_SINGLE
 
 @dataclass
 class EXIFData:
-    """EXIF metadata structure"""
+    """Enhanced EXIF metadata structure"""
     datetime: Optional[str] = None
     gps_latitude: Optional[float] = None
     gps_longitude: Optional[float] = None
+    gps_altitude: Optional[float] = None
     camera_make: Optional[str] = None
     camera_model: Optional[str] = None
+    orientation: Optional[int] = None
+    iso: Optional[int] = None
+    focal_length: Optional[str] = None
+    aperture: Optional[str] = None
+    shutter_speed: Optional[str] = None
+    flash: Optional[str] = None
 
 @dataclass
 class ImageAnalysis:
@@ -99,10 +103,10 @@ class ImageQualityScorer:
             brightness_score = min(100, max(0, 100 - abs(perceived_brightness - 128) / 1.28))
             contrast_score = min(100, contrast)
             overall_score = (
-                0.2 * brightness_score +
-                0.3 * contrast_score +
-                0.4 * sharpness +
-                0.1 * (100 - noise_estimate)
+                    0.2 * brightness_score +
+                    0.3 * contrast_score +
+                    0.4 * sharpness +
+                    0.1 * (100 - noise_estimate)
             )
             return {
                 "overall_quality": f"{overall_score:.2f}/100",
@@ -171,56 +175,353 @@ class ImageQualityScorer:
             logger.warning(f"Error in calculate_quality_score: {e}")
             return 50.0, {"overall_quality": "Error analyzing", "error": str(e)}
 
-class EXIFExtractor:
-    """Extract and process EXIF metadata"""
-    @staticmethod
-    @lru_cache(maxsize=500)
-    def extract_exif_data(image_data: bytes) -> EXIFData:
+class EnhancedEXIFExtractor:
+    """Enhanced EXIF extractor with multiple library support and better GPS handling"""
+
+    def __init__(self):
+        self.geocoder = Nominatim(user_agent="image_analyzer")
+
+    def extract_exif_data(self, image_data: bytes) -> EXIFData:
+        """Extract EXIF data using multiple methods for better reliability"""
+        # Try method 1: PIL with improved GPS handling
+        exif_data = self._extract_with_pil(image_data)
+
+        # If GPS data is missing, try method 2: piexif
+        if exif_data.gps_latitude is None or exif_data.gps_longitude is None:
+            piexif_data = self._extract_with_piexif(image_data)
+            if piexif_data.gps_latitude is not None:
+                exif_data.gps_latitude = piexif_data.gps_latitude
+                exif_data.gps_longitude = piexif_data.gps_longitude
+                exif_data.gps_altitude = piexif_data.gps_altitude
+
+        # If still missing, try method 3: exifread
+        if exif_data.gps_latitude is None or exif_data.gps_longitude is None:
+            exifread_data = self._extract_with_exifread(image_data)
+            if exifread_data.gps_latitude is not None:
+                exif_data.gps_latitude = exifread_data.gps_latitude
+                exif_data.gps_longitude = exifread_data.gps_longitude
+                exif_data.gps_altitude = exifread_data.gps_altitude
+
+        logger.info(f"Final extracted EXIF data: {asdict(exif_data)}")
+        return exif_data
+
+    def _extract_with_pil(self, image_data: bytes) -> EXIFData:
+        """Extract EXIF using PIL with enhanced GPS handling"""
         exif_data = EXIFData()
         try:
             image = Image.open(io.BytesIO(image_data))
-            exif_dict = image._getexif()
+
+            # Try multiple methods to get EXIF
+            exif_dict = None
+
+            # Method 1: Modern getexif()
+            try:
+                exif_dict = image.getexif()
+                logger.info(f"PIL getexif() found {len(exif_dict)} tags")
+            except AttributeError:
+                pass
+
+            # Method 2: Legacy _getexif()
             if not exif_dict:
+                try:
+                    exif_dict = image._getexif()
+                    logger.info(f"PIL _getexif() found {len(exif_dict or {})} tags")
+                except AttributeError:
+                    pass
+
+            if not exif_dict:
+                logger.warning("No EXIF data found with PIL")
                 return exif_data
+
+            # Extract standard EXIF data
             for tag_id, value in exif_dict.items():
                 tag = TAGS.get(tag_id, tag_id)
-                if tag == "DateTime":
-                    exif_data.datetime = str(value)
-                elif tag == "Make":
-                    exif_data.camera_make = str(value)
-                elif tag == "Model":
-                    exif_data.camera_model = str(value)
-                elif tag == "GPSInfo":
-                    gps_data = EXIFExtractor._extract_gps_data(value)
-                    exif_data.gps_latitude = gps_data.get('latitude')
-                    exif_data.gps_longitude = gps_data.get('longitude')
-        except Exception:
-            pass
+                try:
+                    if tag == "DateTime" and value:
+                        exif_data.datetime = str(value).strip()
+                    elif tag == "Make" and value:
+                        exif_data.camera_make = str(value).strip()
+                    elif tag == "Model" and value:
+                        exif_data.camera_model = str(value).strip()
+                    elif tag == "Orientation" and value:
+                        exif_data.orientation = int(value)
+                    elif tag == "ISOSpeedRatings" and value:
+                        exif_data.iso = int(value)
+                    elif tag == "FocalLength" and value:
+                        exif_data.focal_length = str(value)
+                    elif tag == "FNumber" and value:
+                        exif_data.aperture = str(value)
+                    elif tag == "ExposureTime" and value:
+                        exif_data.shutter_speed = str(value)
+                    elif tag == "Flash" and value:
+                        exif_data.flash = str(value)
+                    elif tag == "GPSInfo" and value:
+                        gps_data = self._extract_gps_data_pil(value)
+                        exif_data.gps_latitude = gps_data.get('latitude')
+                        exif_data.gps_longitude = gps_data.get('longitude')
+                        exif_data.gps_altitude = gps_data.get('altitude')
+                        logger.info(f"PIL GPS extracted: lat={exif_data.gps_latitude}, lon={exif_data.gps_longitude}")
+                except Exception as e:
+                    logger.error(f"Error processing PIL EXIF tag {tag}: {str(e)}")
+
+            image.close()
+            return exif_data
+
+        except Exception as e:
+            logger.error(f"PIL EXIF extraction failed: {str(e)}")
+            return exif_data
+
+    def _extract_gps_data_pil(self, gps_info: Dict) -> Dict[str, Optional[float]]:
+        """Enhanced GPS extraction from PIL GPSInfo"""
+
+        def convert_to_degrees(value):
+            try:
+                if isinstance(value, (list, tuple)) and len(value) >= 3:
+                    d, m, s = value[0], value[1], value[2]
+
+                    # Handle different value types (fractions, integers, floats)
+                    def to_float(val):
+                        if hasattr(val, 'num') and hasattr(val, 'den'):  # Fraction
+                            return float(val.num) / float(val.den) if val.den != 0 else 0
+                        return float(val)
+
+                    d_float = to_float(d)
+                    m_float = to_float(m)
+                    s_float = to_float(s)
+
+                    return d_float + (m_float / 60.0) + (s_float / 3600.0)
+                elif isinstance(value, (int, float)):
+                    return float(value)
+                return None
+            except Exception as e:
+                logger.error(f"Error converting GPS coordinates: {str(e)}")
+                return None
+
+        gps_data = {'latitude': None, 'longitude': None, 'altitude': None}
+
+        try:
+            # Check different key formats (numeric and string)
+            lat_keys = [1, 2, 'GPSLatitude']  # GPSLatitudeRef, GPSLatitude
+            lon_keys = [3, 4, 'GPSLongitude']  # GPSLongitudeRef, GPSLongitude
+            alt_keys = [5, 6, 'GPSAltitude']  # GPSAltitudeRef, GPSAltitude
+
+            # Extract latitude
+            lat_ref = None
+            lat_val = None
+            for key in [1, 'GPSLatitudeRef']:
+                if key in gps_info:
+                    lat_ref = gps_info[key]
+                    break
+            for key in [2, 'GPSLatitude']:
+                if key in gps_info:
+                    lat_val = convert_to_degrees(gps_info[key])
+                    break
+
+            if lat_val is not None and lat_ref:
+                lat_ref_str = str(lat_ref).upper()
+                gps_data['latitude'] = lat_val if lat_ref_str == 'N' else -lat_val
+                logger.debug(f"Latitude: {gps_data['latitude']} (ref: {lat_ref_str})")
+
+            # Extract longitude
+            lon_ref = None
+            lon_val = None
+            for key in [3, 'GPSLongitudeRef']:
+                if key in gps_info:
+                    lon_ref = gps_info[key]
+                    break
+            for key in [4, 'GPSLongitude']:
+                if key in gps_info:
+                    lon_val = convert_to_degrees(gps_info[key])
+                    break
+
+            if lon_val is not None and lon_ref:
+                lon_ref_str = str(lon_ref).upper()
+                gps_data['longitude'] = lon_val if lon_ref_str == 'E' else -lon_val
+                logger.debug(f"Longitude: {gps_data['longitude']} (ref: {lon_ref_str})")
+
+            # Extract altitude
+            for key in [6, 'GPSAltitude']:
+                if key in gps_info:
+                    alt_val = convert_to_degrees(gps_info[key])
+                    if alt_val is not None:
+                        gps_data['altitude'] = alt_val
+                        logger.debug(f"Altitude: {gps_data['altitude']}")
+                    break
+
+        except Exception as e:
+            logger.error(f"Error extracting GPS data with PIL: {str(e)}")
+
+        return gps_data
+
+    def _extract_with_piexif(self, image_data: bytes) -> EXIFData:
+        """Extract EXIF using piexif library"""
+        exif_data = EXIFData()
+        try:
+            exif_dict = piexif.load(image_data)
+            logger.info(f"piexif found data in sections: {list(exif_dict.keys())}")
+
+            # Extract GPS data
+            if "GPS" in exif_dict and exif_dict["GPS"]:
+                gps_ifd = exif_dict["GPS"]
+                logger.info(f"piexif GPS tags found: {list(gps_ifd.keys())}")
+
+                # Extract latitude
+                if piexif.GPSIFD.GPSLatitude in gps_ifd and piexif.GPSIFD.GPSLatitudeRef in gps_ifd:
+                    lat_dms = gps_ifd[piexif.GPSIFD.GPSLatitude]
+                    lat_ref = gps_ifd[piexif.GPSIFD.GPSLatitudeRef].decode('utf-8')
+                    lat_dd = self._dms_to_dd(lat_dms)
+                    if lat_dd is not None:
+                        exif_data.gps_latitude = lat_dd if lat_ref == 'N' else -lat_dd
+
+                # Extract longitude
+                if piexif.GPSIFD.GPSLongitude in gps_ifd and piexif.GPSIFD.GPSLongitudeRef in gps_ifd:
+                    lon_dms = gps_ifd[piexif.GPSIFD.GPSLongitude]
+                    lon_ref = gps_ifd[piexif.GPSIFD.GPSLongitudeRef].decode('utf-8')
+                    lon_dd = self._dms_to_dd(lon_dms)
+                    if lon_dd is not None:
+                        exif_data.gps_longitude = lon_dd if lon_ref == 'E' else -lon_dd
+
+                # Extract altitude
+                if piexif.GPSIFD.GPSAltitude in gps_ifd:
+                    alt_data = gps_ifd[piexif.GPSIFD.GPSAltitude]
+                    if isinstance(alt_data, tuple) and len(alt_data) == 2:
+                        exif_data.gps_altitude = float(alt_data[0]) / float(alt_data[1])
+
+                logger.info(f"piexif GPS: lat={exif_data.gps_latitude}, lon={exif_data.gps_longitude}")
+
+            # Extract other EXIF data
+            if "Exif" in exif_dict:
+                exif_ifd = exif_dict["Exif"]
+                if piexif.ExifIFD.DateTimeOriginal in exif_ifd:
+                    exif_data.datetime = exif_ifd[piexif.ExifIFD.DateTimeOriginal].decode('utf-8')
+
+            if "0th" in exif_dict:
+                zeroth_ifd = exif_dict["0th"]
+                if piexif.ImageIFD.Make in zeroth_ifd:
+                    exif_data.camera_make = zeroth_ifd[piexif.ImageIFD.Make].decode('utf-8').strip()
+                if piexif.ImageIFD.Model in zeroth_ifd:
+                    exif_data.camera_model = zeroth_ifd[piexif.ImageIFD.Model].decode('utf-8').strip()
+
+        except Exception as e:
+            logger.error(f"piexif extraction failed: {str(e)}")
+
         return exif_data
 
-    @staticmethod
-    def _extract_gps_data(gps_info: Dict) -> Dict[str, Optional[float]]:
-        def convert_to_degrees(value):
-            if isinstance(value, (list, tuple)) and len(value) == 3:
-                d, m, s = value
-                return float(d) + float(m) / 60 + float(s) / 3600
+    def _extract_with_exifread(self, image_data: bytes) -> EXIFData:
+        """Extract EXIF using exifread library"""
+        exif_data = EXIFData()
+        try:
+            tags = exifread.process_file(io.BytesIO(image_data), details=False)
+            logger.info(f"exifread found {len(tags)} tags")
+
+            # Extract GPS data
+            gps_lat = tags.get('GPS GPSLatitude')
+            gps_lat_ref = tags.get('GPS GPSLatitudeRef')
+            gps_lon = tags.get('GPS GPSLongitude')
+            gps_lon_ref = tags.get('GPS GPSLongitudeRef')
+
+            if gps_lat and gps_lat_ref:
+                lat_dd = self._exifread_gps_to_dd(str(gps_lat))
+                if lat_dd is not None:
+                    exif_data.gps_latitude = lat_dd if str(gps_lat_ref) == 'N' else -lat_dd
+
+            if gps_lon and gps_lon_ref:
+                lon_dd = self._exifread_gps_to_dd(str(gps_lon))
+                if lon_dd is not None:
+                    exif_data.gps_longitude = lon_dd if str(gps_lon_ref) == 'E' else -lon_dd
+
+            # Extract altitude
+            gps_alt = tags.get('GPS GPSAltitude')
+            if gps_alt:
+                try:
+                    alt_str = str(gps_alt)
+                    if '/' in alt_str:
+                        num, den = alt_str.split('/')
+                        exif_data.gps_altitude = float(num) / float(den)
+                    else:
+                        exif_data.gps_altitude = float(alt_str)
+                except:
+                    pass
+
+            logger.info(f"exifread GPS: lat={exif_data.gps_latitude}, lon={exif_data.gps_longitude}")
+
+            # Extract other data
+            if 'EXIF DateTimeOriginal' in tags:
+                exif_data.datetime = str(tags['EXIF DateTimeOriginal'])
+            elif 'Image DateTime' in tags:
+                exif_data.datetime = str(tags['Image DateTime'])
+
+            if 'Image Make' in tags:
+                exif_data.camera_make = str(tags['Image Make']).strip()
+            if 'Image Model' in tags:
+                exif_data.camera_model = str(tags['Image Model']).strip()
+
+        except Exception as e:
+            logger.error(f"exifread extraction failed: {str(e)}")
+
+        return exif_data
+
+    def _dms_to_dd(self, dms_coords) -> Optional[float]:
+        """Convert DMS (Degrees, Minutes, Seconds) to DD (Decimal Degrees)"""
+        try:
+            if isinstance(dms_coords, (list, tuple)) and len(dms_coords) >= 3:
+                degrees = float(dms_coords[0][0]) / float(dms_coords[0][1]) if dms_coords[0][1] != 0 else 0
+                minutes = float(dms_coords[1][0]) / float(dms_coords[1][1]) if dms_coords[1][1] != 0 else 0
+                seconds = float(dms_coords[2][0]) / float(dms_coords[2][1]) if dms_coords[2][1] != 0 else 0
+                return degrees + (minutes / 60.0) + (seconds / 3600.0)
+            return None
+        except Exception as e:
+            logger.error(f"Error converting DMS to DD: {str(e)}")
             return None
 
-        gps_data = {'latitude': None, 'longitude': None}
+    def _exifread_gps_to_dd(self, gps_str: str) -> Optional[float]:
+        """Convert exifread GPS string to decimal degrees"""
         try:
-            if 2 in gps_info and 1 in gps_info:
-                lat = convert_to_degrees(gps_info[2])
-                if lat and gps_info[1] == 'S':
-                    lat = -lat
-                gps_data['latitude'] = lat
-            if 4 in gps_info and 3 in gps_info:
-                lon = convert_to_degrees(gps_info[4])
-                if lon and gps_info[3] == 'W':
-                    lon = -lon
-                gps_data['longitude'] = lon
-        except Exception:
-            pass
-        return gps_data
+            # Format: [DD/1, MM/1, SS/1] or similar
+            gps_str = gps_str.strip('[]')
+            parts = gps_str.split(', ')
+
+            degrees = 0
+            minutes = 0
+            seconds = 0
+
+            if len(parts) >= 1:
+                deg_part = parts[0].strip()
+                if '/' in deg_part:
+                    num, den = deg_part.split('/')
+                    degrees = float(num) / float(den) if float(den) != 0 else 0
+                else:
+                    degrees = float(deg_part)
+
+            if len(parts) >= 2:
+                min_part = parts[1].strip()
+                if '/' in min_part:
+                    num, den = min_part.split('/')
+                    minutes = float(num) / float(den) if float(den) != 0 else 0
+                else:
+                    minutes = float(min_part)
+
+            if len(parts) >= 3:
+                sec_part = parts[2].strip()
+                if '/' in sec_part:
+                    num, den = sec_part.split('/')
+                    seconds = float(num) / float(den) if float(den) != 0 else 0
+                else:
+                    seconds = float(sec_part)
+
+            return degrees + (minutes / 60.0) + (seconds / 3600.0)
+        except Exception as e:
+            logger.error(f"Error parsing exifread GPS string '{gps_str}': {str(e)}")
+            return None
+
+    def get_address_from_coordinates(self, latitude: float, longitude: float) -> Optional[str]:
+        """Get address from GPS coordinates using reverse geocoding"""
+        try:
+            location = self.geocoder.reverse(f"{latitude}, {longitude}", timeout=10)
+            return location.address if location else None
+        except Exception as e:
+            logger.error(f"Reverse geocoding failed: {str(e)}")
+            return None
 
 class ImageProcessor:
     """Handle image manipulation and preprocessing"""
@@ -244,12 +545,11 @@ class ImageProcessor:
 
 class OpenAIImageAnalyzer:
     """Main integration class for OpenAI image analysis"""
-
     def __init__(self, api_key: str):
         self.client = openai.OpenAI(api_key=api_key)
         self.api_key = api_key
         self.quality_scorer = ImageQualityScorer()
-        self.exif_extractor = EXIFExtractor()
+        self.exif_extractor = EnhancedEXIFExtractor()
         self.image_processor = ImageProcessor()
 
     def get_api_key_status(self) -> Dict[str, Any]:
@@ -280,6 +580,12 @@ class OpenAIImageAnalyzer:
             manipulation_params: ImageManipulationParams
     ) -> Tuple[Image.Image, str, float, Dict[str, Any], EXIFData]:
         start_time = time.time()
+        # Check memory usage before processing
+        process = psutil.Process(os.getpid())
+        mem_usage_mb = process.memory_info().rss / 1024 / 1024
+        if mem_usage_mb > MAX_MEMORY_USAGE_MB:
+            raise MemoryError(f"Memory usage exceeds limit of {MAX_MEMORY_USAGE_MB}MB: {mem_usage_mb:.2f}MB")
+
         image_data = base64.b64decode(image_input.image_base64)
         exif_data = self.exif_extractor.extract_exif_data(image_data)
         image = Image.open(io.BytesIO(image_data))
@@ -287,6 +593,11 @@ class OpenAIImageAnalyzer:
         processed_image = self.image_processor.process_image(image, manipulation_params)
         processed_base64 = self.image_processor.image_to_base64(
             processed_image, quality=int(manipulation_params.quality_ratio * 100))
+
+        # Clean up
+        image.close()
+        processed_image.close()
+
         logger.debug(f"Preprocess image {image_input.imageid}: {time.time() - start_time:.2f}s")
         return processed_image, processed_base64, quality_score, quality_metrics, exif_data
 
@@ -299,7 +610,11 @@ class OpenAIImageAnalyzer:
     ) -> Dict[str, Any]:
         """Create OpenAI API message structure with optimized prompts"""
         enhanced_system_prompt = system_prompt + " Return concise JSON with eventName for events."
-        modified_prompt = f"{user_prompt} Return concise JSON with eventName for events."
+        modified_prompt = user_prompt
+        for _, _, _, _, exif_data in images_data:
+            if exif_data.gps_latitude is not None and exif_data.gps_longitude is not None:
+                modified_prompt += f"\nImage GPS Coordinates: Latitude {exif_data.gps_latitude}, Longitude {exif_data.gps_longitude}"
+        modified_prompt += "\nReturn concise JSON with eventName for events."
         final_detail_level = "low"
         content = [{"type": "text", "text": modified_prompt}]
         for _, image_base64, _, _, _ in images_data:
@@ -426,7 +741,8 @@ class OpenAIImageAnalyzer:
             cost["total_cost"] = cost["input_cost"] + cost["output_cost"]
 
         time_taken = time.time() - start_time
-        logger.info(f"Individual Analysis: {len(images)} images, Time: {time_taken:.2f}s, Token Usage: {token_usage}, Cost: ${cost['total_cost']:.6f}")
+        logger.info(
+            f"Individual Analysis: {len(images)} images, Time: {time_taken:.2f}s, Token Usage: {token_usage}, Cost: ${cost['total_cost']:.6f}")
 
         return results, {
             "token_usage": token_usage,
@@ -472,7 +788,7 @@ class OpenAIImageAnalyzer:
                 ))
 
         exif_context = self._create_exif_context([data[4] for data in processed_images])
-        enhanced_user_prompt = f"{user_prompt}\n\nEXIF Context: {exif_context}"
+        enhanced_user_prompt = f"{user_prompt}\n\nEXIF Context: {exif_context}\nIf GPS coordinates are provided, use them to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address."
 
         try:
             request_data = self.create_openai_message(
@@ -518,7 +834,8 @@ class OpenAIImageAnalyzer:
         avg_quality = sum(analysis.quality_score for analysis in individual_analyses) / len(
             individual_analyses) if individual_analyses else 0
         time_taken = time.time() - start_time
-        logger.info(f"Collective Analysis: {len(images)} images, Time: {time_taken:.2f}s, Token Usage: {token_usage}, Cost: ${cost['total_cost']:.6f}")
+        logger.info(
+            f"Collective Analysis: {len(images)} images, Time: {time_taken:.2f}s, Token Usage: {token_usage}, Cost: ${cost['total_cost']:.6f}")
 
         return CollectiveAnalysis(
             event_insights=event_insights,
@@ -538,7 +855,7 @@ class OpenAIImageAnalyzer:
         if dates:
             context_parts.append(f"Dates: {', '.join(set(dates))}")
         locations = [(exif.gps_latitude, exif.gps_longitude) for exif in exif_data_list
-                     if exif.gps_latitude and exif.gps_longitude]
+                     if exif.gps_latitude is not None and exif.gps_longitude is not None]
         if locations:
             context_parts.append(f"GPS found for {len(locations)} images")
         cameras = [f"{exif.camera_make} {exif.camera_model}".strip()
@@ -572,14 +889,14 @@ class OpenAIImageAnalyzer:
 
         if len(image_inputs) == 1:
             openai_params.detail = "high"
-            manipulation_params.resize_ratio = 0.15
-            manipulation_params.max_width = 384
-            manipulation_params.max_height = 384
+            manipulation_params.resize_ratio = RESIZE_RATIO_SINGLE
+            manipulation_params.max_width = MAX_WIDTH_SINGLE
+            manipulation_params.max_height = MAX_HEIGHT_SINGLE
         else:
             openai_params.detail = "low"
-            manipulation_params.resize_ratio = 0.25
-            manipulation_params.max_width = 576
-            manipulation_params.max_height = 576
+            manipulation_params.resize_ratio = RESIZE_RATIO_MULTIPLE
+            manipulation_params.max_width = MAX_WIDTH_MULTIPLE
+            manipulation_params.max_height = MAX_HEIGHT_MULTIPLE
 
         if event_level:
             result, metrics = self.analyze_images_collective(
@@ -596,15 +913,27 @@ def test_exif_extraction(image_path: str):
         with open(image_path, 'rb') as f:
             image_data = base64.b64encode(f.read()).decode('utf-8')
         image_input = ImageInput(image_base64=image_data, imageid="test_image")
-        extractor = EXIFExtractor()
+        extractor = EnhancedEXIFExtractor()
         image_data_decoded = base64.b64decode(image_input.image_base64)
         exif_data = extractor.extract_exif_data(image_data_decoded)
-        print("EXIF Data:")
+        print("Enhanced EXIF Data:")
         print(f"DateTime: {exif_data.datetime}")
         print(f"GPS Latitude: {exif_data.gps_latitude}")
         print(f"GPS Longitude: {exif_data.gps_longitude}")
+        print(f"GPS Altitude: {exif_data.gps_altitude}")
         print(f"Camera Make: {exif_data.camera_make}")
         print(f"Camera Model: {exif_data.camera_model}")
+        print(f"ISO: {exif_data.iso}")
+        print(f"Focal Length: {exif_data.focal_length}")
+        print(f"Aperture: {exif_data.aperture}")
+        print(f"Shutter Speed: {exif_data.shutter_speed}")
+        print(f"Flash: {exif_data.flash}")
+        # Try reverse geocoding if GPS data is available
+        if exif_data.gps_latitude and exif_data.gps_longitude:
+            address = extractor.get_address_from_coordinates(
+                exif_data.gps_latitude, exif_data.gps_longitude
+            )
+            print(f"Address: {address}")
     except Exception as e:
         logger.error(f"Error in test_exif_extraction: {str(e)}")
         raise
@@ -641,6 +970,7 @@ Rules:
 - Focus on batch-level insights.
 - Ensure eventTitle is specific.
 - Use hh:mm AM/PM for estimatedTime.
+- If GPS coordinates are provided, use them to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address.
 """
 
     analyzer = OpenAIImageAnalyzer(api_key=OPENAI_API_KEY)
@@ -664,7 +994,7 @@ Rules:
 
         event_result, metrics = asyncio.run(analyzer.process_request(
             images=["wedding_1.jpg", "wedding_2.jpg", "wedding_3.jpg"],
-            user_prompt="Generate batch-level metadata for a wedding event from these photos. Include event name, subtype, theme, title, location, and activities with times based on EXIF or visual cues.",
+            user_prompt="Generate batch-level metadata for a wedding event from these photos. Include event name, subtype, theme, title, location, and activities with times based on EXIF or visual cues. Use provided GPS coordinates to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address.",
             system_prompt=system_prompt,
             event_level=True,
             openai_params=OpenAIParams(max_tokens=600, detail="low"),
