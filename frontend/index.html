@@ -3,488 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenAI Image Analysis Studio</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <title>AI Image Analysis Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            color: white;
-        }
-
-        .header h1 {
-            font-size: 3em;
-            font-weight: 700;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .header p {
-            font-size: 1.2em;
-            opacity: 0.9;
-        }
-
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 30px;
-        }
-
-        .panel {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-
-        .panel h2 {
-            color: #4a5568;
-            margin-bottom: 20px;
-            font-size: 1.5em;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
         .upload-area {
-            border: 3px dashed #cbd5e0;
-            border-radius: 15px;
-            padding: 40px;
-            text-align: center;
             transition: all 0.3s ease;
-            background: linear-gradient(45deg, #f8fafc, #edf2f7);
-            margin-bottom: 20px;
-            cursor: pointer;
         }
-
-        .upload-area:hover, .upload-area.dragover {
-            border-color: #667eea;
-            background: linear-gradient(45deg, #ebf8ff, #e6fffa);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.1);
+        .upload-area:hover {
+            background-color: #e6f0fa;
+            transform: scale(1.02);
         }
-
-        .upload-icon {
-            font-size: 3em;
-            color: #a0aec0;
-            margin-bottom: 15px;
-        }
-
-        .upload-area.dragover .upload-icon {
-            color: #667eea;
-            animation: bounce 0.5s ease-in-out;
-        }
-
-        @keyframes bounce {
-            0%, 20%, 60%, 100% { transform: translateY(0); }
-            40% { transform: translateY(-10px); }
-            80% { transform: translateY(-5px); }
-        }
-
-        .file-input {
-            display: none;
-        }
-
-        .btn {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: 600;
+        .tab {
             transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
         }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 102, 234, 0.4);
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
+        .tab.active {
+            border-bottom: 3px solid #3b82f6;
+            color: #3b82f6;
             font-weight: 600;
-            color: #4a5568;
         }
-
-        .form-control {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            font-size: 1em;
-            transition: border-color 0.3s ease;
-            background: white;
+        .analyze-btn {
+            transition: all 0.3s ease;
         }
-
-        .form-control:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
         }
-
-        .toggle-switch {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 20px;
+        .loading {
+            backdrop-filter: blur(5px);
         }
-
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 60px;
-            height: 34px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #ccc;
-            transition: 0.4s;
-            border-radius: 34px;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 26px;
-            width: 26px;
-            left: 4px;
-            bottom: 4px;
-            background: white;
-            transition: 0.4s;
-            border-radius: 50%;
-        }
-
-        input:checked + .slider {
-            background: #667eea;
-        }
-
-        input:checked + .slider:before {
-            transform: translateX(26px);
-        }
-
-        .image-preview {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .image-item {
-            position: relative;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        .image-preview img {
             transition: transform 0.3s ease;
         }
-
-        .image-item:hover {
+        .image-preview img:hover {
             transform: scale(1.05);
-        }
-
-        .image-item img {
-            width: 100%;
-            height: 120px;
-            object-fit: cover;
-        }
-
-        .image-info {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(transparent, rgba(0,0,0,0.8));
-            color: white;
-            padding: 10px;
-            font-size: 0.8em;
-        }
-
-        .remove-btn {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            background: rgba(255,255,255,0.9);
-            border: none;
-            border-radius: 50%;
-            width: 25px;
-            height: 25px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.3s ease;
-        }
-
-        .remove-btn:hover {
-            background: #ff6b6b;
-            color: white;
-        }
-
-        .results-section {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            margin-top: 30px;
-        }
-
-        .results-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #e2e8f0;
-        }
-
-        .tab-btn {
-            padding: 12px 24px;
-            background: none;
-            border: none;
-            border-bottom: 3px solid transparent;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            color: #718096;
-        }
-
-        .tab-btn.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
-        }
-
-        .tab-content {
-            display: none;
-            animation: fadeIn 0.3s ease;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .analysis-card {
-            background: white;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
-            border-left: 4px solid #667eea;
-        }
-
-        .quality-score {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.9em;
-        }
-
-        .quality-excellent { background: #c6f6d5; color: #2f855a; }
-        .quality-good { background: #fefcbf; color: #b7791f; }
-        .quality-fair { background: #fed7d7; color: #c53030; }
-        .quality-poor { background: #feb2b2; color: #9b2c2c; }
-
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.8);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .loading-content {
-            background: white;
-            padding: 40px;
-            border-radius: 20px;
-            text-align: center;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-        }
-
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 20px;
-            border-radius: 15px;
-            text-align: center;
-        }
-
-        .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .chart-container {
-            margin: 30px 0;
-            height: 300px;
-            position: relative;
-        }
-
-        .error-message {
-            background: #fed7d7;
-            color: #c53030;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 15px 0;
-            border-left: 4px solid #c53030;
-        }
-
-        #jsonContent {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.9em;
-            color: #2d3748;
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            padding: 20px;
-            border-radius: 10px;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-
-        #jsonContent code {
-            white-space: pre-wrap;
-        }
-
-        @media (max-width: 768px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-            .container {
-                padding: 10px;
-            }
-            .header h1 {
-                font-size: 2em;
-            }
-            .panel {
-                padding: 20px;
-            }
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🎨 AI Image Analysis Studio</h1>
-            <p>Powered by OpenAI GPT-4 Vision</p>
-        </div>
+<body class="min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <header class="text-center mb-12">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">🎨 AI Image Analysis Studio</h1>
+            <p class="text-lg text-gray-600">Powered by Advanced Vision AI</p>
+        </header>
 
-        <div class="main-content">
-            <!-- Upload Panel -->
-            <div class="panel">
-                <h2>📸 Image Upload</h2>
-                <div class="upload-area" id="uploadArea">
-                    <div class="upload-icon">☁️</div>
-                    <h3>Drag & Drop Images</h3>
-                    <p>or click to browse</p>
-                    <p style="font-size: 0.8em; color: #666; margin-top: 10px;">
-                        Supports: JPG, PNG • Max 10 images
-                    </p>
-                </div>
-                <input type="file" id="fileInput" class="file-input" multiple accept="image/jpeg,image/png">
-                <div class="image-preview" id="imagePreview"></div>
+        <section class="bg-white rounded-2xl shadow-lg p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">📸 Image Upload</h2>
+            <div class="upload-area border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer bg-gray-50" id="uploadArea">
+                <p class="text-3xl">☁️</p>
+                <p class="text-lg font-medium text-gray-700">Drag & Drop Images</p>
+                <p class="text-gray-500">or click to browse</p>
+                <p class="text-sm text-gray-400">Supports: JPG, PNG • Max 10 images</p>
+                <input type="file" id="imageInput" multiple accept="image/jpeg,image/png" class="hidden">
             </div>
+            <div id="imagePreviews" class="flex flex-wrap gap-4 mt-4"></div>
+        </section>
 
-            <!-- Configuration Panel -->
-            <div class="panel">
-                <h2>⚙️ Analysis Settings</h2>
-                
-                
-                <div class="toggle-switch">
-                    <span>Analysis Mode:</span>
-                    <label class="switch">
-                        <input type="checkbox" id="analysisMode" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span id="modeLabel">Event-Level Analysis</span>
+        <section class="bg-white rounded-2xl shadow-lg p-6 mb-8">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">⚙️ Analysis Settings</h2>
+            <div class="grid gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Analysis Mode</label>
+                    <select id="analysisMode" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="event">Event-Level Analysis</option>
+                        <option value="individual">Individual Analysis</option>
+                    </select>
                 </div>
-                <div class="form-group">
-                    <label>User Prompt</label>
-                    <textarea id="userPrompt" class="form-control" rows="3" placeholder="Describe what you want to analyze...">Generate batch-level metadata for a wedding event from these photos. Include event name, subtype, theme, title, location, and activities with times based on EXIF or visual cues.</textarea>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">User Prompt</label>
+                    <textarea id="userPrompt" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="4">Generate batch-level metadata for a wedding event from these photos. Include event name, subtype, theme, title, location, and activities with times based on EXIF or visual cues.</textarea>
                 </div>
-                <div class="form-group">
-                    <label>System Prompt</label>
-                    <textarea id="systemPrompt" class="form-control" rows="4" placeholder="System instructions...">Generate batch-level metadata for a wedding event from images. Return concise JSON with:
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">System Prompt</label>
+                    <textarea id="systemPrompt" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="6">Generate batch-level metadata for a wedding event from images. Return concise JSON with:
 {
   "eventType": "wedding",
   "eventMetadata": {
@@ -515,437 +110,170 @@ Rules:
 - Ensure eventTitle is specific.
 - Use hh:mm AM/PM for estimatedTime.</textarea>
                 </div>
-                <div class="form-group">
-                    <label>Detail Level</label>
-                    <select id="detailLevel" class="form-control">
-                        <option value="low" selected>Low Detail</option>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Detail Level</label>
+                    <select id="detailLevel" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="low">Low Detail</option>
                         <option value="high">High Detail</option>
                         <option value="auto">Auto</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Model</label>
-                    <select id="modelSelect" class="form-control">
-                        <option value="gpt-4.1" selected>GPT-4.1</option>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                    <select id="model" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="gpt-4.1">GPT-4.1</option>
                         <option value="gpt-4o">GPT-4o</option>
                         <option value="gpt-4-turbo">GPT-4-turbo</option>
                     </select>
                 </div>
-                <button class="btn" id="analyzeBtn" disabled>🚀 Analyze</button>
+                <button class="analyze-btn bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600" onclick="analyzeImages()">🚀 Analyze</button>
             </div>
-        </div>
+        </section>
 
-        <!-- Results Section -->
-        <div class="results-section" id="resultsSection" style="display: none;">
-            <h2>📊 Results</h2>
-            <div class="results-tabs">
-                <button class="tab-btn active" data-tab="overview">Overview</button>
-                <button class="tab-btn" data-tab="individual">Individual</button>
-                <button class="tab-btn" data-tab="insights">Insights</button>
-                <button class="tab-btn" data-tab="json">JSON</button>
+        <section class="bg-white rounded-2xl shadow-lg p-6" id="resultsSection">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">📊 Results</h2>
+            <div class="flex gap-4 mb-4 border-b border-gray-200">
+                <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('overview')">Overview</div>
+                <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('individual')">Individual</div>
+                <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('insights')">Insights</div>
+                <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('json')">JSON</div>
             </div>
-            <div class="tab-content active" id="overview" data-rendered="false">
-                <div class="stats-grid" id="statsGrid"></div>
-                <div class="chart-container">
-                    <canvas id="qualityChart"></canvas>
-                </div>
+            <div id="overview" class="tab-content">
+                <h3 class="text-xl font-semibold text-gray-800 mb-3">Overview</h3>
+                <div id="overviewContent" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
             </div>
-            <div class="tab-content" id="individual" data-rendered="false">
-                <div id="individualResults"></div>
+            <div id="individual" class="tab-content hidden">
+                <h3 class="text-xl font-semibold text-gray-800 mb-3">Individual Analysis</h3>
+                <div id="individualContent" class="grid grid-cols-1 gap-4"></div>
             </div>
-            <div class="tab-content" id="insights" data-rendered="false">
-                <div id="aiInsights"></div>
+            <div id="insights" class="tab-content hidden">
+                <h3 class="text-xl font-semibold text-gray-800 mb-3">Insights</h3>
+                <div id="insightsContent" class="bg-gray-50 p-4 rounded-lg"></div>
             </div>
-            <div class="tab-content" id="json" data-rendered="false">
-                <div id="jsonOutput">
-                    <h3>Raw JSON</h3>
-                    <pre id="jsonContent"></pre>
-                </div>
+            <div id="json" class="tab-content hidden">
+                <h3 class="text-xl font-semibold text-gray-800 mb-3">Raw JSON</h3>
+                <pre id="jsonContent" class="bg-gray-50 p-4 rounded-lg overflow-x-auto"></pre>
             </div>
-        </div>
+        </section>
     </div>
 
-    <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-content">
-            <div class="spinner"></div>
-            <h3 id="loadingText">Analyzing...</h3>
-            <p id="loadingDetails"><span id="currentImage">0</span> of <span id="totalImages">0</span> images</p>
+    <div class="loading fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center text-white hidden" id="loading">
+        <div class="text-center">
+            <h2 class="text-2xl font-semibold mb-2">Analyzing...</h2>
+            <p id="loadingProgress" class="text-lg">0 of 0 images</p>
         </div>
     </div>
 
     <script>
-        class ImageAnalysisUI {
-            constructor() {
-                this.images = [];
-                this.results = null;
-                this.apiBaseUrl = "http://localhost:8000";
-                this.maxImages = 10;
-                this.apiKeySet = false;
-                this.maxTokens = 600;
-                this.initializeEventListeners();
-                this.fetchConfig();
+        const uploadArea = document.getElementById('uploadArea');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreviews = document.getElementById('imagePreviews');
+        let selectedImages = [];
+
+        uploadArea.addEventListener('click', () => imageInput.click());
+        uploadArea.addEventListener('dragover', (e) => e.preventDefault());
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const files = e.dataTransfer.files;
+            handleFiles(files);
+        });
+        imageInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            const allowedTypes = ['image/jpeg', 'image/png'];
+            selectedImages = Array.from(files).filter(file => allowedTypes.includes(file.type)).slice(0, 10);
+            imagePreviews.innerHTML = '';
+            selectedImages.forEach((file, index) => {
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                img.className = 'image-preview w-24 h-24 object-cover rounded-lg';
+                imagePreviews.appendChild(img);
+            });
+        }
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+            document.querySelector(`.tab[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(tabName).classList.remove('hidden');
+        }
+
+        async function analyzeImages() {
+            if (selectedImages.length === 0) {
+                alert('Please upload at least one image.');
+                return;
             }
 
-            async fetchConfig() {
-                try {
-                    const response = await fetch(`${this.apiBaseUrl}/config`);
-                    if (!response.ok) throw new Error('Failed to fetch config');
-                    const config = await response.json();
-                    this.apiKeySet = config.api_key_status.api_key_set;
-                    this.maxTokens = config.max_tokens;
-                    document.getElementById('apiKeyStatus').textContent = 
-                        this.apiKeySet ? `API Key Set (starts with ${config.api_key_status.api_key_prefix})` : 'API Key Not Set';
-                    document.getElementById('maxTokens').textContent = this.maxTokens;
-                    this.validateForm();
-                } catch (error) {
-                    document.getElementById('apiKeyStatus').textContent = 'Error fetching API key status';
-                    document.getElementById('maxTokens').textContent = 'Error fetching max tokens';
-                    this.showError('Failed to load configuration: ' + error.message);
-                }
-            }
+            const loading = document.getElementById('loading');
+            const loadingProgress = document.getElementById('loadingProgress');
+            loading.classList.remove('hidden');
+            loadingProgress.textContent = `0 of ${selectedImages.length} images`;
 
-            initializeEventListeners() {
-                const uploadArea = document.getElementById('uploadArea');
-                const fileInput = document.getElementById('fileInput');
-                uploadArea.addEventListener('click', () => fileInput.click());
-                uploadArea.addEventListener('dragover', e => {
-                    e.preventDefault();
-                    uploadArea.classList.add('dragover');
-                });
-                uploadArea.addEventListener('dragleave', e => {
-                    e.preventDefault();
-                    uploadArea.classList.remove('dragover');
-                });
-                uploadArea.addEventListener('drop', this.handleDrop.bind(this));
-                fileInput.addEventListener('change', e => this.processFiles(Array.from(e.target.files)));
-                document.getElementById('analysisMode').addEventListener('change', this.toggleAnalysisMode.bind(this));
-                document.getElementById('analyzeBtn').addEventListener('click', this.startAnalysis.bind(this));
-                ['userPrompt', 'systemPrompt', 'detailLevel', 'modelSelect'].forEach(id => {
-                    document.getElementById(id).addEventListener('input', this.validateForm.bind(this));
-                });
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.addEventListener('click', this.switchTab.bind(this));
-                });
-            }
+            const formData = new FormData();
+            selectedImages.forEach((file, index) => {
+                formData.append('images', file);
+                loadingProgress.textContent = `${index + 1} of ${selectedImages.length} images`;
+            });
 
-            handleDrop(e) {
-                e.preventDefault();
-                document.getElementById('uploadArea').classList.remove('dragover');
-                this.processFiles(Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/')));
-            }
+            formData.append('user_prompt', document.getElementById('userPrompt').value);
+            formData.append('system_prompt', document.getElementById('systemPrompt').value);
+            formData.append('detail_level', document.getElementById('detailLevel').value);
+            formData.append('event_level', document.getElementById('analysisMode').value === 'event');
+            formData.append('model', document.getElementById('model').value);
 
-            processFiles(files) {
-                if (this.images.length + files.length > this.maxImages) {
-                    this.showError(`Maximum of ${this.maxImages} images allowed`);
-                    return;
-                }
-                files.forEach(file => {
-                    if (file.type.startsWith('image/')) {
-                        const reader = new FileReader();
-                        reader.onload = e => {
-                            const img = new Image();
-                            img.src = e.target.result;
-                            img.onload = () => {
-                                const canvas = document.createElement('canvas');
-                                const ctx = canvas.getContext('2d');
-                                const maxSize = 100;
-                                let width = img.width;
-                                let height = img.height;
-                                if (width > height) {
-                                    if (width > maxSize) {
-                                        height *= maxSize / width;
-                                        width = maxSize;
-                                    }
-                                } else {
-                                    if (height > maxSize) {
-                                        width *= maxSize / height;
-                                        height = maxSize;
-                                    }
-                                }
-                                canvas.width = width;
-                                canvas.height = height;
-                                ctx.drawImage(img, 0, 0, width, height);
-                                const thumbnail = canvas.toDataURL('image/jpeg', 0.5);
-                                this.images.push({
-                                    id: Date.now() + Math.random(),
-                                    file: file,
-                                    base64: thumbnail,
-                                    name: file.name
-                                });
-                                this.updateImagePreview();
-                                this.validateForm();
-                            };
-                        };
-                        reader.readAsDataURL(file);
-                    }
-                });
-            }
-
-            updateImagePreview() {
-                const preview = document.getElementById('imagePreview');
-                preview.innerHTML = '';
-                this.images.forEach((image, index) => {
-                    const imageItem = document.createElement('div');
-                    imageItem.className = 'image-item';
-                    imageItem.innerHTML = `
-                        <img src="${image.base64}" alt="${image.name}">
-                        <div class="image-info">${image.name}</div>
-                        <button class="remove-btn" onclick="imageAnalysis.removeImage(${index})">×</button>
-                    `;
-                    preview.appendChild(imageItem);
-                });
-            }
-
-            removeImage(index) {
-                this.images.splice(index, 1);
-                this.updateImagePreview();
-                this.validateForm();
-            }
-
-            toggleAnalysisMode() {
-                document.getElementById('modeLabel').textContent = 
-                    document.getElementById('analysisMode').checked ? 'Event-Level Analysis' : 'Individual Images';
-                this.validateForm();
-            }
-
-            validateForm() {
-                const userPrompt = document.getElementById('userPrompt').value.trim();
-                const systemPrompt = document.getElementById('systemPrompt').value.trim();
-                document.getElementById('analyzeBtn').disabled = 
-                    !(this.apiKeySet && this.images.length > 0 && userPrompt && systemPrompt);
-            }
-
-            async startAnalysis() {
-                if (!this.images.length) return;
-                this.showLoading(true);
-                try {
-                    this.results = await this.callAnalysisAPI();
-                    this.displayResults();
-                } catch (error) {
-                    this.showError(error.message || 'An error occurred during analysis');
-                } finally {
-                    this.showLoading(false);
-                }
-            }
-
-            async callAnalysisAPI() {
-                const formData = new FormData();
-                this.images.forEach((image, index) => {
-                    formData.append('images', image.file);
-                    this.updateLoadingProgress(index + 1, this.images.length);
-                });
-                formData.append('user_prompt', document.getElementById('userPrompt').value);
-                formData.append('system_prompt', document.getElementById('systemPrompt').value);
-                let detailLevel = document.getElementById('detailLevel').value;
-                if (detailLevel === 'auto') {
-                    detailLevel = this.images.length === 1 ? 'high' : 'low';
-                }
-                formData.append('detail_level', detailLevel);
-                formData.append('event_level', document.getElementById('analysisMode').checked);
-                formData.append('model', document.getElementById('modelSelect').value);
-                const response = await fetch(`${this.apiBaseUrl}/analyze`, {
+            try {
+                const response = await fetch('http://localhost:8000/analyze', {
                     method: 'POST',
                     body: formData
                 });
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'API Error');
-                }
-                return await response.json();
-            }
+                const result = await response.json();
 
-            updateLoadingProgress(current, total) {
-                document.getElementById('loadingText').textContent = 'Analyzing...';
-                document.getElementById('currentImage').textContent = current;
-                document.getElementById('totalImages').textContent = total;
-            }
-
-            showLoading(show) {
-                document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
-                if (show) {
-                    document.getElementById('currentImage').textContent = '0';
-                    document.getElementById('totalImages').textContent = this.images.length;
-                }
-            }
-
-            showError(message) {
-                const resultsSection = document.getElementById('resultsSection');
-                resultsSection.style.display = 'block';
-                resultsSection.innerHTML = `
-                    <div class="error-message">
-                        <h3>Error</h3>
-                        <p>${message}</p>
-                    </div>
-                `;
-                resultsSection.scrollIntoView({ behavior: 'smooth' });
-            }
-
-            displayResults() {
-                document.getElementById('resultsSection').style.display = 'block';
-                document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
-                document.querySelectorAll('.tab-content').forEach(content => content.dataset.rendered = 'false');
-                this.switchTab({ target: document.querySelector('.tab-btn[data-tab="overview"]') });
-            }
-
-            switchTab(e) {
-                const tab = e.target.dataset.tab;
-                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-                e.target.classList.add('active');
-                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                const content = document.getElementById(tab);
-                content.classList.add('active');
-                if (content.dataset.rendered === 'false') {
-                    this[`render${tab.charAt(0).toUpperCase() + tab.slice(1)}`]();
-                    content.dataset.rendered = 'true';
-                }
-            }
-
-            renderOverview() {
-                const statsGrid = document.getElementById('statsGrid');
-                statsGrid.innerHTML = '';
-                if (this.results.type === 'event') {
-                    statsGrid.innerHTML = `
-                        <div class="stat-card">
-                            <div class="stat-value">${this.results.total_images}</div>
-                            <div>Total Images</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${this.results.average_quality.toFixed(1)}</div>
-                            <div>Avg Quality</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${this.results.time_taken.toFixed(2)}s</div>
-                            <div>Time</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${this.results.token_usage.total_tokens}</div>
-                            <div>Total Tokens</div>
+                // Display results
+                if (result.type === 'event') {
+                    document.getElementById('overviewContent').innerHTML = `
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <p class="text-gray-700"><strong>Total Images:</strong> ${result.total_images}</p>
+                            <p class="text-gray-700"><strong>Average Quality:</strong> ${result.average_quality}</p>
+                            <p class="text-gray-700"><strong>Time Taken:</strong> ${result.time_taken}s</p>
+                            <p class="text-gray-700"><strong>Model:</strong> ${result.model}</p>
                         </div>
                     `;
+                    document.getElementById('insightsContent').innerHTML = `<pre class="text-sm text-gray-700">${JSON.stringify(result.event_insights, null, 2)}</pre>`;
+                    document.getElementById('individualContent').innerHTML = result.image_analyses.map(analysis => `
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h4 class="text-lg font-semibold text-gray-800">Image: ${analysis.imageid}</h4>
+                            <p class="text-gray-700"><strong>Quality Score:</strong> ${analysis.quality_score}</p>
+                            <p class="text-gray-700"><strong>Quality Metrics:</strong> ${JSON.stringify(analysis.quality_metrics, null, 2)}</p>
+                            <p class="text-gray-700"><strong>EXIF Data:</strong> ${JSON.stringify(analysis.exif_data, null, 2)}</p>
+                        </div>
+                    `).join('');
                 } else {
-                    const avgQuality = this.results.analyses.reduce((sum, a) => sum + a.quality_score, 0) / this.results.analyses.length;
-                    statsGrid.innerHTML = `
-                        <div class="stat-card">
-                            <div class="stat-value">${this.results.analyses.length}</div>
-                            <div>Images</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${avgQuality.toFixed(1)}</div>
-                            <div>Avg Quality</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${this.results.time_taken.toFixed(2)}s</div>
-                            <div>Time</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">${this.results.token_usage.total_tokens}</div>
-                            <div>Total Tokens</div>
+                    document.getElementById('overviewContent').innerHTML = `
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <p class="text-gray-700"><strong>Total Images:</strong> ${result.analyses.length}</p>
+                            <p class="text-gray-700"><strong>Time Taken:</strong> ${result.time_taken}s</p>
+                            <p class="text-gray-700"><strong>Model:</strong> ${result.model}</p>
                         </div>
                     `;
-                }
-                this.renderQualityChart();
-            }
-
-            renderQualityChart() {
-                const ctx = document.getElementById('qualityChart').getContext('2d');
-                if (Chart.getChart('qualityChart')) Chart.getChart('qualityChart').destroy();
-                const data = this.results.type === 'event' ? this.results.image_analyses : this.results.analyses;
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: data.map(d => d.imageid.split('.')[0]),
-                        datasets: [{
-                            label: 'Quality Score',
-                            data: data.map(d => d.quality_score),
-                            backgroundColor: '#48bb78',
-                            borderColor: '#2f855a',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            y: { beginAtZero: true, max: 100, title: { display: true, text: 'Score' } },
-                            x: { title: { display: true, text: 'Images' } }
-                        },
-                        plugins: {
-                            legend: { position: 'top' },
-                            title: { display: true, text: 'Quality Scores' }
-                        }
-                    }
-                });
-            }
-
-            renderIndividual() {
-                const individualResults = document.getElementById('individualResults');
-                individualResults.innerHTML = '';
-                const data = this.results.type === 'event' ? this.results.image_analyses : this.results.analyses;
-                data.forEach(analysis => {
-                    const qualityScore = analysis.quality_score;
-                    const qualityClass = qualityScore >= 80 ? 'quality-excellent' : qualityScore >= 60 ? 'quality-good' : qualityScore >= 50 ? 'quality-fair' : 'quality-poor';
-                    const card = document.createElement('div');
-                    card.className = 'analysis-card';
-                    let analysisHtml = this.results.type === 'individual' && analysis.analysis ? this.renderObject(analysis.analysis) : '';
-                    card.innerHTML = `
-                        <h3>Image: ${analysis.imageid}</h3>
-                        <div class="quality-score ${qualityClass}">
-                            Quality: ${qualityScore.toFixed(1)}
+                    document.getElementById('individualContent').innerHTML = result.analyses.map(analysis => `
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h4 class="text-lg font-semibold text-gray-800">Image: ${analysis.imageid}</h4>
+                            <p class="text-gray-700"><strong>Quality Score:</strong> ${analysis.quality_score}</p>
+                            <p class="text-gray-700"><strong>Quality Metrics:</strong> ${JSON.stringify(analysis.quality_metrics, null, 2)}</p>
+                            <p class="text-gray-700"><strong>EXIF Data:</strong> ${JSON.stringify(analysis.exif_data, null, 2)}</p>
+                            <p class="text-gray-700"><strong>Analysis:</strong> ${JSON.stringify(analysis.analysis, null, 2)}</p>
                         </div>
-                        <h4>Quality Metrics:</h4>
-                        <p><strong>Overall:</strong> ${analysis.quality_metrics.overall_quality}</p>
-                        <p><strong>Brightness:</strong> ${analysis.quality_metrics.brightness}</p>
-                        <p><strong>Contrast:</strong> ${analysis.quality_metrics.contrast}</p>
-                        <p><strong>Sharpness:</strong> ${analysis.quality_metrics.sharpness}</p>
-                        <p><strong>Noise:</strong> ${analysis.quality_metrics.noise_estimate}</p>
-                        <h4>EXIF Data:</h4>
-                        <p><strong>Date:</strong> ${analysis.exif_data.datetime || 'N/A'}</p>
-                        <p><strong>Camera:</strong> ${analysis.exif_data.camera_make || 'N/A'} ${analysis.exif_data.camera_model || ''}</p>
-                        <p><strong>GPS:</strong> ${analysis.exif_data.gps_latitude?.toFixed(6) || 'N/A'}, ${analysis.exif_data.gps_longitude?.toFixed(6) || 'N/A'}</p>
-                        ${analysisHtml ? `<h4>Analysis:</h4>${analysisHtml}` : ''}
-                    `;
-                    individualResults.appendChild(card);
-                });
-            }
-
-            renderInsights() {
-                const aiInsights = document.getElementById('aiInsights');
-                aiInsights.innerHTML = '';
-                if (this.results.type === 'event') {
-                    const card = document.createElement('div');
-                    card.className = 'analysis-card';
-                    card.innerHTML = `
-                        <h3>Event Insights</h3>
-                        ${this.renderObject(this.results.event_insights)}
-                    `;
-                    aiInsights.appendChild(card);
-                } else {
-                    aiInsights.innerHTML = '<p class="analysis-card">Switch to Event-Level Analysis for insights.</p>';
+                    `).join('');
+                    document.getElementById('insightsContent').innerHTML = '<p class="text-gray-700">Individual analysis mode - check Individual tab.</p>';
                 }
-            }
-
-            renderJson() {
-                const jsonContent = document.getElementById('jsonContent');
-                jsonContent.innerHTML = `<code>${JSON.stringify(this.results, null, 2)}</code>`;
-            }
-
-            renderObject(obj, depth = 0) {
-                if (!obj || typeof obj !== 'object') return `<p>${String(obj) || 'N/A'}</p>`;
-                let html = depth === 0 ? '' : '<ul style="margin-left: 20px;">';
-                for (const [key, value] of Object.entries(obj)) {
-                    if (typeof value === 'object' && value !== null) {
-                        html += `<li><strong>${key}:</strong>${this.renderObject(value, depth + 1)}</li>`;
-                    } else {
-                        html += `<li><strong>${key}:</strong> ${String(value) || 'N/A'}</li>`;
-                    }
-                }
-                html += depth === 0 ? '' : '</ul>';
-                return html;
+                document.getElementById('jsonContent').textContent = JSON.stringify(result, null, 2);
+                document.getElementById('resultsSection').classList.remove('hidden');
+            } catch (error) {
+                alert('Error analyzing images: ' + error.message);
+            } finally {
+                loading.classList.add('hidden');
             }
         }
-
-        const imageAnalysis = new ImageAnalysisUI();
     </script>
 </body>
 </html>
