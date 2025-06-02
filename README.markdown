@@ -98,7 +98,7 @@ The AI Image Analysis Platform is a web application that leverages OpenAI's GPT-
 
 ## API Documentation
 
-The backend provides a REST API for programmatic access. The API endpoints are defined in `main.py`.
+The backend provides a REST API built with FastAPI for programmatic access. The API endpoints are defined in `main.py`.
 
 ### Endpoints
 
