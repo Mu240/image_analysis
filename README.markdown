@@ -29,8 +29,8 @@ The AI Image Analysis Platform is a web application that leverages OpenAI's GPT-
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/your-repo/ai-image-analysis.git
-   cd ai-image-analysis
+   git clone https://github.com/Mu240/image_analysis.git
+   cd image_analysis
    ```
 
 2. **Set Up a Virtual Environment**:
@@ -56,16 +56,24 @@ The AI Image Analysis Platform is a web application that leverages OpenAI's GPT-
    ```
    Replace `your-openai-api-key` with your OpenAI API key and `your-custom-api-key` with a secure API key for request authentication. Adjust `MAX_TOKENS` as needed (100–4000).
 
-5. **Run the Application**:
-   Start the Flask server:
+5. **Run the Backend**:
+   Navigate to the `backend/` directory and start the FastAPI server:
    ```bash
-   python main.py
+   cd backend
+   uvicorn server:app --host 0.0.0.0 --port 8000
    ```
-   The application will typically run on `http://localhost:5000` (default Flask port, unless specified otherwise in `main.py`).
 
-6. **Access the Application**:
-   - Open `http://localhost:5000` in a browser to access the application.
-   - The frontend is rendered server-side using templates (see `templates/` folder).
+6. **Serve the Frontend**:
+   Navigate to the `frontend/` directory and serve `index.html` using a simple HTTP server:
+   ```bash
+   cd frontend
+   python -m http.server 8080
+   ```
+   Alternatively, place `index.html` in a web server directory (e.g., Nginx, Apache).
+
+7. **Access the Application**:
+   - Open `http://localhost:8080` in a browser to access the frontend.
+   - Ensure the backend is running at `http://localhost:8000`.
 
 ## Usage
 
@@ -250,18 +258,17 @@ The backend provides a REST API for programmatic access. The API endpoints are d
 ## Project Structure
 
 ```
-ai-image-analysis/
+image_analysis/
+├── backend/
+│   ├── config.py          # Configuration settings and environment variable handling
+│   ├── image_analysis.py  # Core image processing and analysis logic
+│   └── server.py          # FastAPI backend server
+├── frontend/
+│   └── index.html         # Frontend interface
 ├── .env                   # Environment variables (not tracked)
 ├── .gitignore             # Git ignore rules
-├── .venv/                 # Virtual environment
-├── flask_session/         # Flask session storage
-├── reports/               # Generated reports or logs
-├── templates/             # Flask templates for server-side rendering
-├── uploads/               # Uploaded files (e.g., images)
-├── main.py                # Flask application entry point
-├── music_analysis.log     # Application logs
-├── requirements.txt       # Python dependencies
-└── README.md              # Project documentation
+├── README.md              # Project documentation
+└── requirements.txt       # Python dependencies
 ```
 
 ## Troubleshooting
