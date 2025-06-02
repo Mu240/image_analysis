@@ -4,17 +4,15 @@ The AI Image Analysis Platform is a web application that leverages OpenAI's GPT-
 
 ## Features
 
-- **Event-Level Analysis**: Aggregates insights across multiple images to identify event details (e.g., name, location, activities) using EXIF GPS data or visual inference.
-- **Individual Image Analysis**: Provides detailed per-image analysis, including quality scores, EXIF metadata, and AI-generated insights.
-- **Image Manipulation Metrics**: Reports size reduction percentage (based on pixel count) and quality reduction percentage (based on compression) for each image, displayed in the API response.
-- **Configurable Parameters**:
-  - `max_tokens`: Adjustable token limit for OpenAI API calls (100–4000, default: 600).
-  - Model selection: GPT-4.1, GPT-4o, GPT-4-turbo.
-  - Detail level: low, medium, high (auto-adjusts based on image count).
+- **Event-Level Analysis**: Aggregates insights across multiple images to identify event details, such as name, location, and activities, using EXIF GPS data or visual inference.
+- **Individual Image Analysis**: Delivers detailed per-image analysis, including quality scores, EXIF metadata, and AI-generated insights.
+- **Image Manipulation Metrics**: Reports the percentage of size reduction (pixel count) and quality reduction (compression) applied to images before analysis, displayed in the frontend and API response.
+- **Configurable Parameters**: Allows customization of `max_tokens` (100–4000), model (GPT-4.1, GPT-4o, GPT-4-turbo), and detail level (low, high, auto).
 - **Strict File Validation**: Accepts only JPEG and PNG images, with a 10MB size limit per file and a maximum of 10 images per request.
-- **EXIF Metadata Extraction**: Extracts comprehensive metadata (datetime, GPS coordinates, camera details) using PIL, piexif, and exifread for reliability.
+- **EXIF Metadata Extraction**: Extracts comprehensive metadata (datetime, GPS, camera details) using PIL, piexif, and exifread for reliability.
 - **Image Quality Scoring**: Computes scores based on brightness, contrast, sharpness, and noise, with detailed metrics.
-- **Flask Backend**: Built with Flask, supporting server-side rendering with templates, session management, and detailed logging.
+- **Responsive Frontend**: Features drag-and-drop image upload, tabbed results (Overview, Individual, Insights, JSON), and a `max_tokens` input field.
+- **Robust Backend**: Built with FastAPI, supporting async processing, CORS, and detailed logging.
 - **API Key Authentication**: Requires a valid API key in the `Authorization` header for the `/analyze` endpoint.
 - **Resource Management**: Enforces memory limits (512MB), processing timeouts (300 seconds), and proper file cleanup.
 
