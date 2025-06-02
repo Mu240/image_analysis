@@ -292,14 +292,3 @@ image_analysis/
 - **Logging**: Logs are written to `music_analysis.log`; check this file for errors or performance metrics.
 - **Dependencies**: Key libraries include `flask`, `openai`, `pillow`, `piexif`, `exifread`, `geopy`, `python-dotenv`, and `psutil`.
 
-## Contributing
-
-Contributions are welcome! Submit issues or pull requests to the repository. Follow PEP 8 for code style and include tests for new features.
-
-## License
-
-MIT License (add a `LICENSE` file to the project if needed).
-
-## Last Updated
-
-09:48 PM PKT on Monday, June 2, 2025
