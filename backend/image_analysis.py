@@ -16,14 +16,14 @@ import logging
 from functools import lru_cache
 import httpx
 import psutil
-import piexif  # New library for better EXIF handling
-import exifread  # Alternative EXIF library
-from geopy.geocoders import Nominatim  # For reverse geocoding
+import piexif
+import exifread
+from geopy.geocoders import Nominatim
 from config import (
     OPENAI_API_KEY, AVAILABLE_MODELS, DEFAULT_MODEL, VISION_DETAIL_LEVEL,
     QUALITY_RATIO, RESIZE_RATIO_SINGLE, RESIZE_RATIO_MULTIPLE,
     MAX_WIDTH_SINGLE, MAX_HEIGHT_SINGLE, MAX_WIDTH_MULTIPLE, MAX_HEIGHT_MULTIPLE,
-    TEMPERATURE, PRESENCE_PENALTY, FREQUENCY_PENALTY, MAX_MEMORY_USAGE_MB
+    TEMPERATURE, PRESENCE_PENALTY, FREQUENCY_PENALTY, MAX_MEMORY_USAGE_MB, MAX_TOKENS
 )
 
 # Set up logging
@@ -39,7 +39,7 @@ class ImageInput:
 @dataclass
 class OpenAIParams:
     """OpenAI API parameters"""
-    max_tokens: int = 600
+    max_tokens: int
     detail: str = VISION_DETAIL_LEVEL
     model: str = DEFAULT_MODEL
     temperature: float = TEMPERATURE
@@ -69,6 +69,7 @@ class EXIFData:
     aperture: Optional[str] = None
     shutter_speed: Optional[str] = None
     flash: Optional[str] = None
+    imageid: Optional[str] = None  # Added to associate with image
 
 @dataclass
 class ImageAnalysis:
@@ -103,10 +104,10 @@ class ImageQualityScorer:
             brightness_score = min(100, max(0, 100 - abs(perceived_brightness - 128) / 1.28))
             contrast_score = min(100, contrast)
             overall_score = (
-                    0.2 * brightness_score +
-                    0.3 * contrast_score +
-                    0.4 * sharpness +
-                    0.1 * (100 - noise_estimate)
+                0.2 * brightness_score +
+                0.3 * contrast_score +
+                0.4 * sharpness +
+                0.1 * (100 - noise_estimate)
             )
             return {
                 "overall_quality": f"{overall_score:.2f}/100",
@@ -183,25 +184,19 @@ class EnhancedEXIFExtractor:
 
     def extract_exif_data(self, image_data: bytes) -> EXIFData:
         """Extract EXIF data using multiple methods for better reliability"""
-        # Try method 1: PIL with improved GPS handling
         exif_data = self._extract_with_pil(image_data)
-
-        # If GPS data is missing, try method 2: piexif
         if exif_data.gps_latitude is None or exif_data.gps_longitude is None:
             piexif_data = self._extract_with_piexif(image_data)
             if piexif_data.gps_latitude is not None:
                 exif_data.gps_latitude = piexif_data.gps_latitude
                 exif_data.gps_longitude = piexif_data.gps_longitude
                 exif_data.gps_altitude = piexif_data.gps_altitude
-
-        # If still missing, try method 3: exifread
         if exif_data.gps_latitude is None or exif_data.gps_longitude is None:
             exifread_data = self._extract_with_exifread(image_data)
             if exifread_data.gps_latitude is not None:
                 exif_data.gps_latitude = exifread_data.gps_latitude
                 exif_data.gps_longitude = exifread_data.gps_longitude
                 exif_data.gps_altitude = exifread_data.gps_altitude
-
         logger.info(f"Final extracted EXIF data: {asdict(exif_data)}")
         return exif_data
 
@@ -210,30 +205,21 @@ class EnhancedEXIFExtractor:
         exif_data = EXIFData()
         try:
             image = Image.open(io.BytesIO(image_data))
-
-            # Try multiple methods to get EXIF
             exif_dict = None
-
-            # Method 1: Modern getexif()
             try:
                 exif_dict = image.getexif()
                 logger.info(f"PIL getexif() found {len(exif_dict)} tags")
             except AttributeError:
                 pass
-
-            # Method 2: Legacy _getexif()
             if not exif_dict:
                 try:
                     exif_dict = image._getexif()
                     logger.info(f"PIL _getexif() found {len(exif_dict or {})} tags")
                 except AttributeError:
                     pass
-
             if not exif_dict:
                 logger.warning("No EXIF data found with PIL")
                 return exif_data
-
-            # Extract standard EXIF data
             for tag_id, value in exif_dict.items():
                 tag = TAGS.get(tag_id, tag_id)
                 try:
@@ -263,32 +249,25 @@ class EnhancedEXIFExtractor:
                         logger.info(f"PIL GPS extracted: lat={exif_data.gps_latitude}, lon={exif_data.gps_longitude}")
                 except Exception as e:
                     logger.error(f"Error processing PIL EXIF tag {tag}: {str(e)}")
-
             image.close()
             return exif_data
-
         except Exception as e:
             logger.error(f"PIL EXIF extraction failed: {str(e)}")
             return exif_data
 
     def _extract_gps_data_pil(self, gps_info: Dict) -> Dict[str, Optional[float]]:
         """Enhanced GPS extraction from PIL GPSInfo"""
-
         def convert_to_degrees(value):
             try:
                 if isinstance(value, (list, tuple)) and len(value) >= 3:
                     d, m, s = value[0], value[1], value[2]
-
-                    # Handle different value types (fractions, integers, floats)
                     def to_float(val):
-                        if hasattr(val, 'num') and hasattr(val, 'den'):  # Fraction
+                        if hasattr(val, 'num') and hasattr(val, 'den'):
                             return float(val.num) / float(val.den) if val.den != 0 else 0
                         return float(val)
-
                     d_float = to_float(d)
                     m_float = to_float(m)
                     s_float = to_float(s)
-
                     return d_float + (m_float / 60.0) + (s_float / 3600.0)
                 elif isinstance(value, (int, float)):
                     return float(value)
@@ -298,14 +277,10 @@ class EnhancedEXIFExtractor:
                 return None
 
         gps_data = {'latitude': None, 'longitude': None, 'altitude': None}
-
         try:
-            # Check different key formats (numeric and string)
-            lat_keys = [1, 2, 'GPSLatitude']  # GPSLatitudeRef, GPSLatitude
-            lon_keys = [3, 4, 'GPSLongitude']  # GPSLongitudeRef, GPSLongitude
-            alt_keys = [5, 6, 'GPSAltitude']  # GPSAltitudeRef, GPSAltitude
-
-            # Extract latitude
+            lat_keys = [1, 2, 'GPSLatitude']
+            lon_keys = [3, 4, 'GPSLongitude']
+            alt_keys = [5, 6, 'GPSAltitude']
             lat_ref = None
             lat_val = None
             for key in [1, 'GPSLatitudeRef']:
@@ -316,13 +291,10 @@ class EnhancedEXIFExtractor:
                 if key in gps_info:
                     lat_val = convert_to_degrees(gps_info[key])
                     break
-
             if lat_val is not None and lat_ref:
                 lat_ref_str = str(lat_ref).upper()
                 gps_data['latitude'] = lat_val if lat_ref_str == 'N' else -lat_val
                 logger.debug(f"Latitude: {gps_data['latitude']} (ref: {lat_ref_str})")
-
-            # Extract longitude
             lon_ref = None
             lon_val = None
             for key in [3, 'GPSLongitudeRef']:
@@ -333,13 +305,10 @@ class EnhancedEXIFExtractor:
                 if key in gps_info:
                     lon_val = convert_to_degrees(gps_info[key])
                     break
-
             if lon_val is not None and lon_ref:
                 lon_ref_str = str(lon_ref).upper()
                 gps_data['longitude'] = lon_val if lon_ref_str == 'E' else -lon_val
                 logger.debug(f"Longitude: {gps_data['longitude']} (ref: {lon_ref_str})")
-
-            # Extract altitude
             for key in [6, 'GPSAltitude']:
                 if key in gps_info:
                     alt_val = convert_to_degrees(gps_info[key])
@@ -347,10 +316,8 @@ class EnhancedEXIFExtractor:
                         gps_data['altitude'] = alt_val
                         logger.debug(f"Altitude: {gps_data['altitude']}")
                     break
-
         except Exception as e:
             logger.error(f"Error extracting GPS data with PIL: {str(e)}")
-
         return gps_data
 
     def _extract_with_piexif(self, image_data: bytes) -> EXIFData:
@@ -359,52 +326,38 @@ class EnhancedEXIFExtractor:
         try:
             exif_dict = piexif.load(image_data)
             logger.info(f"piexif found data in sections: {list(exif_dict.keys())}")
-
-            # Extract GPS data
             if "GPS" in exif_dict and exif_dict["GPS"]:
                 gps_ifd = exif_dict["GPS"]
                 logger.info(f"piexif GPS tags found: {list(gps_ifd.keys())}")
-
-                # Extract latitude
                 if piexif.GPSIFD.GPSLatitude in gps_ifd and piexif.GPSIFD.GPSLatitudeRef in gps_ifd:
                     lat_dms = gps_ifd[piexif.GPSIFD.GPSLatitude]
                     lat_ref = gps_ifd[piexif.GPSIFD.GPSLatitudeRef].decode('utf-8')
                     lat_dd = self._dms_to_dd(lat_dms)
                     if lat_dd is not None:
                         exif_data.gps_latitude = lat_dd if lat_ref == 'N' else -lat_dd
-
-                # Extract longitude
                 if piexif.GPSIFD.GPSLongitude in gps_ifd and piexif.GPSIFD.GPSLongitudeRef in gps_ifd:
                     lon_dms = gps_ifd[piexif.GPSIFD.GPSLongitude]
                     lon_ref = gps_ifd[piexif.GPSIFD.GPSLongitudeRef].decode('utf-8')
                     lon_dd = self._dms_to_dd(lon_dms)
                     if lon_dd is not None:
                         exif_data.gps_longitude = lon_dd if lon_ref == 'E' else -lon_dd
-
-                # Extract altitude
                 if piexif.GPSIFD.GPSAltitude in gps_ifd:
                     alt_data = gps_ifd[piexif.GPSIFD.GPSAltitude]
                     if isinstance(alt_data, tuple) and len(alt_data) == 2:
                         exif_data.gps_altitude = float(alt_data[0]) / float(alt_data[1])
-
-                logger.info(f"piexif GPS: lat={exif_data.gps_latitude}, lon={exif_data.gps_longitude}")
-
-            # Extract other EXIF data
+                logger.info(f"pieeif GPS: lat={exif_data.gps_latitude}, lon={exif_data.gps_longitude}")
             if "Exif" in exif_dict:
                 exif_ifd = exif_dict["Exif"]
                 if piexif.ExifIFD.DateTimeOriginal in exif_ifd:
                     exif_data.datetime = exif_ifd[piexif.ExifIFD.DateTimeOriginal].decode('utf-8')
-
             if "0th" in exif_dict:
                 zeroth_ifd = exif_dict["0th"]
                 if piexif.ImageIFD.Make in zeroth_ifd:
                     exif_data.camera_make = zeroth_ifd[piexif.ImageIFD.Make].decode('utf-8').strip()
                 if piexif.ImageIFD.Model in zeroth_ifd:
                     exif_data.camera_model = zeroth_ifd[piexif.ImageIFD.Model].decode('utf-8').strip()
-
         except Exception as e:
             logger.error(f"piexif extraction failed: {str(e)}")
-
         return exif_data
 
     def _extract_with_exifread(self, image_data: bytes) -> EXIFData:
@@ -413,24 +366,19 @@ class EnhancedEXIFExtractor:
         try:
             tags = exifread.process_file(io.BytesIO(image_data), details=False)
             logger.info(f"exifread found {len(tags)} tags")
-
-            # Extract GPS data
             gps_lat = tags.get('GPS GPSLatitude')
             gps_lat_ref = tags.get('GPS GPSLatitudeRef')
+
             gps_lon = tags.get('GPS GPSLongitude')
             gps_lon_ref = tags.get('GPS GPSLongitudeRef')
-
             if gps_lat and gps_lat_ref:
                 lat_dd = self._exifread_gps_to_dd(str(gps_lat))
                 if lat_dd is not None:
                     exif_data.gps_latitude = lat_dd if str(gps_lat_ref) == 'N' else -lat_dd
-
             if gps_lon and gps_lon_ref:
                 lon_dd = self._exifread_gps_to_dd(str(gps_lon))
                 if lon_dd is not None:
                     exif_data.gps_longitude = lon_dd if str(gps_lon_ref) == 'E' else -lon_dd
-
-            # Extract altitude
             gps_alt = tags.get('GPS GPSAltitude')
             if gps_alt:
                 try:
@@ -442,23 +390,17 @@ class EnhancedEXIFExtractor:
                         exif_data.gps_altitude = float(alt_str)
                 except:
                     pass
-
             logger.info(f"exifread GPS: lat={exif_data.gps_latitude}, lon={exif_data.gps_longitude}")
-
-            # Extract other data
             if 'EXIF DateTimeOriginal' in tags:
                 exif_data.datetime = str(tags['EXIF DateTimeOriginal'])
             elif 'Image DateTime' in tags:
                 exif_data.datetime = str(tags['Image DateTime'])
-
             if 'Image Make' in tags:
                 exif_data.camera_make = str(tags['Image Make']).strip()
             if 'Image Model' in tags:
                 exif_data.camera_model = str(tags['Image Model']).strip()
-
         except Exception as e:
             logger.error(f"exifread extraction failed: {str(e)}")
-
         return exif_data
 
     def _dms_to_dd(self, dms_coords) -> Optional[float]:
@@ -477,14 +419,11 @@ class EnhancedEXIFExtractor:
     def _exifread_gps_to_dd(self, gps_str: str) -> Optional[float]:
         """Convert exifread GPS string to decimal degrees"""
         try:
-            # Format: [DD/1, MM/1, SS/1] or similar
             gps_str = gps_str.strip('[]')
             parts = gps_str.split(', ')
-
             degrees = 0
             minutes = 0
             seconds = 0
-
             if len(parts) >= 1:
                 deg_part = parts[0].strip()
                 if '/' in deg_part:
@@ -492,7 +431,6 @@ class EnhancedEXIFExtractor:
                     degrees = float(num) / float(den) if float(den) != 0 else 0
                 else:
                     degrees = float(deg_part)
-
             if len(parts) >= 2:
                 min_part = parts[1].strip()
                 if '/' in min_part:
@@ -500,7 +438,6 @@ class EnhancedEXIFExtractor:
                     minutes = float(num) / float(den) if float(den) != 0 else 0
                 else:
                     minutes = float(min_part)
-
             if len(parts) >= 3:
                 sec_part = parts[2].strip()
                 if '/' in sec_part:
@@ -508,7 +445,6 @@ class EnhancedEXIFExtractor:
                     seconds = float(num) / float(den) if float(den) != 0 else 0
                 else:
                     seconds = float(sec_part)
-
             return degrees + (minutes / 60.0) + (seconds / 3600.0)
         except Exception as e:
             logger.error(f"Error parsing exifread GPS string '{gps_str}': {str(e)}")
@@ -526,7 +462,8 @@ class EnhancedEXIFExtractor:
 class ImageProcessor:
     """Handle image manipulation and preprocessing"""
     @staticmethod
-    def process_image(image: Image.Image, params: ImageManipulationParams) -> Image.Image:
+    def process_image(image: Image.Image, params: ImageManipulationParams) -> Tuple[Image.Image, float]:
+        original_pixels = image.width * image.height
         processed_image = image.copy()
         if params.resize_ratio != 1.0:
             new_width = int(image.width * params.resize_ratio)
@@ -534,7 +471,9 @@ class ImageProcessor:
             processed_image = processed_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         if processed_image.width > params.max_width or processed_image.height > params.max_height:
             processed_image.thumbnail((params.max_width, params.max_height), Image.Resampling.LANCZOS)
-        return processed_image
+        processed_pixels = processed_image.width * processed_image.height
+        size_reduction_percent = ((original_pixels - processed_pixels) / original_pixels * 100) if original_pixels > 0 else 0
+        return processed_image, size_reduction_percent
 
     @staticmethod
     def image_to_base64(image: Image.Image, quality: int = 40) -> str:
@@ -578,28 +517,29 @@ class OpenAIImageAnalyzer:
             self,
             image_input: ImageInput,
             manipulation_params: ImageManipulationParams
-    ) -> Tuple[Image.Image, str, float, Dict[str, Any], EXIFData]:
+    ) -> Tuple[Image.Image, str, float, Dict[str, Any], EXIFData, Dict[str, float]]:
         start_time = time.time()
-        # Check memory usage before processing
         process = psutil.Process(os.getpid())
         mem_usage_mb = process.memory_info().rss / 1024 / 1024
         if mem_usage_mb > MAX_MEMORY_USAGE_MB:
             raise MemoryError(f"Memory usage exceeds limit of {MAX_MEMORY_USAGE_MB}MB: {mem_usage_mb:.2f}MB")
-
         image_data = base64.b64decode(image_input.image_base64)
         exif_data = self.exif_extractor.extract_exif_data(image_data)
+        exif_data.imageid = image_input.imageid
         image = Image.open(io.BytesIO(image_data))
         quality_score, quality_metrics = self.quality_scorer.calculate_quality_score(image)
-        processed_image = self.image_processor.process_image(image, manipulation_params)
+        processed_image, size_reduction_percent = self.image_processor.process_image(image, manipulation_params)
+        quality_reduction_percent = (1 - manipulation_params.quality_ratio) * 100
         processed_base64 = self.image_processor.image_to_base64(
             processed_image, quality=int(manipulation_params.quality_ratio * 100))
-
-        # Clean up
         image.close()
         processed_image.close()
-
+        manipulation_metrics = {
+            "size_reduction_percent": round(size_reduction_percent, 2),
+            "quality_reduction_percent": round(quality_reduction_percent, 2)
+        }
         logger.debug(f"Preprocess image {image_input.imageid}: {time.time() - start_time:.2f}s")
-        return processed_image, processed_base64, quality_score, quality_metrics, exif_data
+        return processed_image, processed_base64, quality_score, quality_metrics, exif_data, manipulation_metrics
 
     def create_openai_message(
             self,
@@ -608,23 +548,35 @@ class OpenAIImageAnalyzer:
             images_data: List[Tuple],
             openai_params: OpenAIParams
     ) -> Dict[str, Any]:
-        """Create OpenAI API message structure with optimized prompts"""
-        enhanced_system_prompt = system_prompt + " Return concise JSON with eventName for events."
-        modified_prompt = user_prompt
-        for _, _, _, _, exif_data in images_data:
+        """Create OpenAI API message structure with per-image location prompts"""
+        enhanced_system_prompt = system_prompt + "\nReturn concise JSON with eventName and per-image location data."
+        content = [{"type": "text", "text": user_prompt}]
+        for _, image_base64, _, _, exif_data, _ in images_data:
+            image_prompt = ""
             if exif_data.gps_latitude is not None and exif_data.gps_longitude is not None:
-                modified_prompt += f"\nImage GPS Coordinates: Latitude {exif_data.gps_latitude}, Longitude {exif_data.gps_longitude}"
-        modified_prompt += "\nReturn concise JSON with eventName for events."
-        final_detail_level = "low"
-        content = [{"type": "text", "text": modified_prompt}]
-        for _, image_base64, _, _, _ in images_data:
+                address = self.exif_extractor.get_address_from_coordinates(
+                    exif_data.gps_latitude, exif_data.gps_longitude
+                )
+                image_prompt = (
+                    f"\nImage ID: {exif_data.imageid}\n"
+                    f"GPS Coordinates: Latitude {exif_data.gps_latitude}, Longitude {exif_data.gps_longitude}\n"
+                    f"Address: {address if address else 'Unknown'}\n"
+                    "Use these coordinates for precise location data."
+                )
+            else:
+                image_prompt = (
+                    f"\nImage ID: {exif_data.imageid}\n"
+                    "No GPS coordinates available. Analyze the image content to infer the location "
+                    "(e.g., landmarks, signage, environmental cues) and provide an estimated address."
+                )
             content.append({
                 "type": "image_url",
                 "image_url": {
                     "url": f"data:image/jpeg;base64,{image_base64}",
-                    "detail": final_detail_level
+                    "detail": openai_params.detail
                 }
             })
+            content.append({"type": "text", "text": image_prompt})
         model_to_use = openai_params.model if openai_params.model in AVAILABLE_MODELS else DEFAULT_MODEL
         api_params = {
             "model": model_to_use,
@@ -708,47 +660,45 @@ class OpenAIImageAnalyzer:
             images: List[ImageInput],
             user_prompt: str,
             system_prompt: str,
-            openai_params: OpenAIParams = OpenAIParams(),
+            openai_params: OpenAIParams = OpenAIParams(max_tokens=MAX_TOKENS),
             manipulation_params: ImageManipulationParams = ImageManipulationParams()
     ) -> Tuple[List[ImageAnalysis], Dict[str, Any]]:
         start_time = time.time()
         results = []
         token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         cost = {"input_cost": 0.0, "output_cost": 0.0, "total_cost": 0.0}
-
+        manipulation_metrics = {}
         async with aiohttp.ClientSession() as session:
             tasks = []
             for image_input in images:
-                _, processed_base64, quality_score, quality_metrics, exif_data = self.preprocess_image(
+                processed_image, processed_base64, quality_score, quality_metrics, exif_data, manip_metrics = self.preprocess_image(
                     image_input, manipulation_params)
+                exif_data.imageid = image_input.imageid
+                manipulation_metrics[image_input.imageid] = manip_metrics
                 request_data = self.create_openai_message(
-                    user_prompt, system_prompt, [(None, processed_base64, quality_score, quality_metrics, exif_data)],
+                    user_prompt, system_prompt, [(processed_image, processed_base64, quality_score, quality_metrics, exif_data, manip_metrics)],
                     openai_params)
-                tasks.append(self.async_openai_call(session, request_data, image_input, quality_score, quality_metrics,
-                                                    exif_data))
+                tasks.append(self.async_openai_call(session, request_data, image_input, quality_score, quality_metrics, exif_data))
             responses = await asyncio.gather(*tasks, return_exceptions=True)
-
         for response in responses:
             if isinstance(response, ImageAnalysis):
                 results.append(response)
                 token_usage["prompt_tokens"] += 170
                 token_usage["completion_tokens"] += openai_params.max_tokens // len(images)
                 token_usage["total_tokens"] = token_usage["prompt_tokens"] + token_usage["completion_tokens"]
-
         if openai_params.model == "gpt-4.1":
             cost["input_cost"] = (token_usage["prompt_tokens"] / 1000) * 0.005
             cost["output_cost"] = (token_usage["completion_tokens"] / 1000) * 0.015
             cost["total_cost"] = cost["input_cost"] + cost["output_cost"]
-
         time_taken = time.time() - start_time
         logger.info(
             f"Individual Analysis: {len(images)} images, Time: {time_taken:.2f}s, Token Usage: {token_usage}, Cost: ${cost['total_cost']:.6f}")
-
         return results, {
             "token_usage": token_usage,
             "time_taken": round(time_taken, 2),
             "cost": cost,
-            "model": openai_params.model
+            "model": openai_params.model,
+            "manipulation_metrics": manipulation_metrics
         }
 
     def analyze_images_collective(
@@ -756,7 +706,7 @@ class OpenAIImageAnalyzer:
             images: List[ImageInput],
             user_prompt: str,
             system_prompt: str,
-            openai_params: OpenAIParams = OpenAIParams(),
+            openai_params: OpenAIParams = OpenAIParams(max_tokens=MAX_TOKENS),
             manipulation_params: ImageManipulationParams = ImageManipulationParams()
     ) -> Tuple[CollectiveAnalysis, Dict[str, Any]]:
         start_time = time.time()
@@ -764,12 +714,14 @@ class OpenAIImageAnalyzer:
         individual_analyses = []
         token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         cost = {"input_cost": 0.0, "output_cost": 0.0, "total_cost": 0.0}
-
+        manipulation_metrics = {}
         for image_input in images:
             try:
-                _, processed_base64, quality_score, quality_metrics, exif_data = self.preprocess_image(
+                processed_image, processed_base64, quality_score, quality_metrics, exif_data, manip_metrics = self.preprocess_image(
                     image_input, manipulation_params)
-                processed_images.append((image_input, processed_base64, quality_score, quality_metrics, exif_data))
+                exif_data.imageid = image_input.imageid
+                manipulation_metrics[image_input.imageid] = manip_metrics
+                processed_images.append((processed_image, processed_base64, quality_score, quality_metrics, exif_data, manip_metrics))
                 individual_analyses.append(ImageAnalysis(
                     imageid=image_input.imageid,
                     quality_score=quality_score,
@@ -786,13 +738,9 @@ class OpenAIImageAnalyzer:
                     exif_data=EXIFData(),
                     analysis={"error": str(e)}
                 ))
-
-        exif_context = self._create_exif_context([data[4] for data in processed_images])
-        enhanced_user_prompt = f"{user_prompt}\n\nEXIF Context: {exif_context}\nIf GPS coordinates are provided, use them to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address."
-
         try:
             request_data = self.create_openai_message(
-                enhanced_user_prompt, system_prompt, processed_images, openai_params)
+                user_prompt, system_prompt, processed_images, openai_params)
             response = self.client.chat.completions.create(**request_data)
             event_insights = json.loads(response.choices[0].message.content)
             event_insights['_metadata'] = {
@@ -807,12 +755,19 @@ class OpenAIImageAnalyzer:
             token_usage["prompt_tokens"] = response.usage.prompt_tokens
             token_usage["completion_tokens"] = response.usage.completion_tokens
             token_usage["total_tokens"] = response.usage.total_tokens
-
+            for analysis in individual_analyses:
+                for activity in event_insights.get('eventActivities', []):
+                    if activity.get('imageid') == analysis.imageid:
+                        analysis.analysis = {
+                            "description": activity.get('name', ''),
+                            "location": activity.get('activityLocation', {}),
+                            "estimatedTime": activity.get('estimatedTime', ''),
+                            "qualityScore": analysis.quality_score
+                        }
             if openai_params.model == "gpt-4.1":
                 cost["input_cost"] = (token_usage["prompt_tokens"] / 1000) * 0.005
                 cost["output_cost"] = (token_usage["completion_tokens"] / 1000) * 0.015
                 cost["total_cost"] = cost["input_cost"] + cost["output_cost"]
-
         except httpx.TimeoutException as e:
             logger.error(f"Timeout during collective API call: {str(e)}")
             event_insights = {"error": "OpenAI API call timed out."}
@@ -830,13 +785,11 @@ class OpenAIImageAnalyzer:
                     "mood": "neutral",
                     "qualityScore": analysis.quality_score
                 }
-
         avg_quality = sum(analysis.quality_score for analysis in individual_analyses) / len(
             individual_analyses) if individual_analyses else 0
         time_taken = time.time() - start_time
         logger.info(
             f"Collective Analysis: {len(images)} images, Time: {time_taken:.2f}s, Token Usage: {token_usage}, Cost: ${cost['total_cost']:.6f}")
-
         return CollectiveAnalysis(
             event_insights=event_insights,
             image_analyses=individual_analyses,
@@ -846,25 +799,23 @@ class OpenAIImageAnalyzer:
             "token_usage": token_usage,
             "time_taken": round(time_taken, 2),
             "cost": cost,
-            "model": openai_params.model
+            "model": openai_params.model,
+            "manipulation_metrics": manipulation_metrics
         }
 
     def _create_exif_context(self, exif_data_list: List[EXIFData]) -> str:
         context_parts = []
-        dates = [exif.datetime for exif in exif_data_list if exif.datetime]
-        if dates:
-            context_parts.append(f"Dates: {', '.join(set(dates))}")
-        locations = [(exif.gps_latitude, exif.gps_longitude) for exif in exif_data_list
-                     if exif.gps_latitude is not None and exif.gps_longitude is not None]
-        if locations:
-            context_parts.append(f"GPS found for {len(locations)} images")
-        cameras = [f"{exif.camera_make} {exif.camera_model}".strip()
-                   for exif in exif_data_list
-                   if exif.camera_make or exif.camera_model]
-        if cameras:
-            unique_cameras = list(set(cameras))
-            context_parts.append(f"Cameras: {', '.join(unique_cameras)}")
-        return '\n'.join(context_parts) if context_parts else "No EXIF metadata"
+        for exif in exif_data_list:
+            if exif.datetime:
+                context_parts.append(f"Image {exif.imageid} Date: {exif.datetime}")
+            if exif.gps_latitude is not None and exif.gps_longitude is not None:
+                address = self.exif_extractor.get_address_from_coordinates(
+                    exif.gps_latitude, exif.gps_longitude
+                )
+                context_parts.append(f"Image {exif.imageid} GPS: Latitude {exif.gps_latitude}, Longitude {exif.gps_longitude}, Address: {address or 'Unknown'}")
+            if exif.camera_make or exif.camera_model:
+                context_parts.append(f"Image {exif.imageid} Camera: {exif.camera_make} {exif.camera_model}".strip())
+        return '\n'.join(context_parts) if context_parts else "No EXIF metadata available"
 
     async def process_request(
             self,
@@ -872,7 +823,7 @@ class OpenAIImageAnalyzer:
             user_prompt: str,
             system_prompt: str,
             event_level: bool = True,
-            openai_params: OpenAIParams = OpenAIParams(),
+            openai_params: OpenAIParams = OpenAIParams(max_tokens=MAX_TOKENS),
             manipulation_params: ImageManipulationParams = ImageManipulationParams()
     ) -> Tuple[Union[CollectiveAnalysis, List[ImageAnalysis]], Dict[str, Any]]:
         start_time = time.time()
@@ -880,13 +831,10 @@ class OpenAIImageAnalyzer:
             image_inputs = self.load_images_from_paths(images)
         else:
             image_inputs = images
-
         if len(image_inputs) > 10:
             raise ValueError("Maximum of 10 images allowed for input")
-
         if not image_inputs:
             raise ValueError("No valid images provided")
-
         if len(image_inputs) == 1:
             openai_params.detail = "high"
             manipulation_params.resize_ratio = RESIZE_RATIO_SINGLE
@@ -897,7 +845,6 @@ class OpenAIImageAnalyzer:
             manipulation_params.resize_ratio = RESIZE_RATIO_MULTIPLE
             manipulation_params.max_width = MAX_WIDTH_MULTIPLE
             manipulation_params.max_height = MAX_HEIGHT_MULTIPLE
-
         if event_level:
             result, metrics = self.analyze_images_collective(
                 image_inputs, user_prompt, system_prompt, openai_params, manipulation_params)
@@ -908,38 +855,32 @@ class OpenAIImageAnalyzer:
         logger.info(f"Process Request: {len(image_inputs)} images, Total Time: {metrics['total_time_taken']:.2f}s")
         return result, metrics
 
-def test_exif_extraction(image_path: str):
+def test_location_analysis(image_paths: List[str]):
+    analyzer = OpenAIImageAnalyzer(api_key=OPENAI_API_KEY)
+    system_prompt = EXAMPLE_SYSTEM_PROMPT.replace("{{eventType}}", "test_event")
     try:
-        with open(image_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        image_input = ImageInput(image_base64=image_data, imageid="test_image")
-        extractor = EnhancedEXIFExtractor()
-        image_data_decoded = base64.b64decode(image_input.image_base64)
-        exif_data = extractor.extract_exif_data(image_data_decoded)
-        print("Enhanced EXIF Data:")
-        print(f"DateTime: {exif_data.datetime}")
-        print(f"GPS Latitude: {exif_data.gps_latitude}")
-        print(f"GPS Longitude: {exif_data.gps_longitude}")
-        print(f"GPS Altitude: {exif_data.gps_altitude}")
-        print(f"Camera Make: {exif_data.camera_make}")
-        print(f"Camera Model: {exif_data.camera_model}")
-        print(f"ISO: {exif_data.iso}")
-        print(f"Focal Length: {exif_data.focal_length}")
-        print(f"Aperture: {exif_data.aperture}")
-        print(f"Shutter Speed: {exif_data.shutter_speed}")
-        print(f"Flash: {exif_data.flash}")
-        # Try reverse geocoding if GPS data is available
-        if exif_data.gps_latitude and exif_data.gps_longitude:
-            address = extractor.get_address_from_coordinates(
-                exif_data.gps_latitude, exif_data.gps_longitude
-            )
-            print(f"Address: {address}")
+        event_result, metrics = asyncio.run(analyzer.process_request(
+            images=image_paths,
+            user_prompt="Analyze these images for a test event. For each image, provide location data either from EXIF or by inferring from image content.",
+            system_prompt=system_prompt,
+            event_level=True
+        ))
+        print("Event-Level Analysis Result:")
+        print(json.dumps(asdict(event_result), indent=2, default=str))
+        print("Metrics:", json.dumps(metrics, indent=2))
+        individual_result, individual_metrics = asyncio.run(analyzer.process_request(
+            images=image_paths,
+            user_prompt="Analyze each image individually and provide location data either from EXIF or by inferring from image content.",
+            system_prompt=system_prompt,
+            event_level=False
+        ))
+        print("\nIndividual Analysis Result:")
+        print(json.dumps([asdict(analysis) for analysis in individual_result], indent=2, default=str))
+        print("Metrics:", json.dumps(individual_metrics, indent=2))
     except Exception as e:
-        logger.error(f"Error in test_exif_extraction: {str(e)}")
-        raise
+        print(f"Location analysis test error: {e}")
 
-if __name__ == "__main__":
-    EXAMPLE_SYSTEM_PROMPT = """
+EXAMPLE_SYSTEM_PROMPT = """
 Generate batch-level metadata for a {{eventType}} event from images. Return concise JSON with:
 {
   "eventType": "{{eventType}}",
@@ -962,46 +903,23 @@ Generate batch-level metadata for a {{eventType}} event from images. Return conc
         "name": "string",
         "type": "place" | "venue" | "landmark" | "nature" | "building" | "bridge" | "worship" | "civic" | "market",
         "address": "string"
-      }
+      },
+      "imageid": "string"
     }
   ]
 }
 Rules:
-- Focus on batch-level insights.
+- Focus on batch-level insights for event-level analysis.
 - Ensure eventTitle is specific.
 - Use hh:mm AM/PM for estimatedTime.
-- If GPS coordinates are provided, use them to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address.
+- For each image, if GPS coordinates are provided, use them to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address.
+- If GPS coordinates are not available for an image, analyze the image content to infer the location (e.g., landmarks, signage, environmental cues).
+- For eventLocation, aggregate locations if multiple images have consistent locations; otherwise, select the most representative location or indicate per-image locations in eventActivities.
 """
 
-    analyzer = OpenAIImageAnalyzer(api_key=OPENAI_API_KEY)
-
-    print("=== EXIF EXTRACTION TEST ===")
+if __name__ == "__main__":
+    print("=== LOCATION ANALYSIS TEST ===")
     try:
-        test_exif_extraction("wedding_1.jpg")
+        test_location_analysis(["wedding_1.jpg", "wedding_2.jpg", "wedding_3.jpg"])
     except Exception as e:
-        print(f"EXIF extraction test error: {e}")
-
-    print("\n" + "=" * 50 + "\n")
-    print("=== EVENT-LEVEL ANALYSIS EXAMPLE ===")
-    try:
-        system_prompt = EXAMPLE_SYSTEM_PROMPT.replace(
-            "{{eventType}}", "wedding"
-        ).replace(
-            "{{event_subtype_options}}", "ceremony, reception, engagement"
-        ).replace(
-            "{{event_theme_options}}", "romantic, traditional, modern, cultural"
-        )
-
-        event_result, metrics = asyncio.run(analyzer.process_request(
-            images=["wedding_1.jpg", "wedding_2.jpg", "wedding_3.jpg"],
-            user_prompt="Generate batch-level metadata for a wedding event from these photos. Include event name, subtype, theme, title, location, and activities with times based on EXIF or visual cues. Use provided GPS coordinates to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address.",
-            system_prompt=system_prompt,
-            event_level=True,
-            openai_params=OpenAIParams(max_tokens=600, detail="low"),
-            manipulation_params=ImageManipulationParams(resize_ratio=0.25, quality_ratio=0.4)
-        ))
-        print("Event Analysis Result:")
-        print(json.dumps(asdict(event_result), indent=2, default=str))
-        print("Metrics:", json.dumps(metrics, indent=2))
-    except Exception as e:
-        print(f"Event analysis error: {e}")
+        print(f"Location analysis test error: {e}")
