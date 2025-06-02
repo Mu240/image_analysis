@@ -7,7 +7,7 @@ The AI Image Analysis Platform is a web application that leverages OpenAI's GPT-
 - **Event-Level Analysis**: Aggregates insights across multiple images to identify event details, such as name, location, and activities, using EXIF GPS data or visual inference.
 - **Individual Image Analysis**: Delivers detailed per-image analysis, including quality scores, EXIF metadata, and AI-generated insights.
 - **Image Manipulation Metrics**: Reports the percentage of size reduction (pixel count) and quality reduction (compression) applied to images before analysis, displayed in the frontend and API response.
-- **Configurable Parameters**: Allows customization of `max_tokens` (100–4000), model (GPT-4.1, GPT-4o, GPT-4-turbo), and detail level (low, high, auto).
+- **Configurable Parameters**: Allows customization of `max_tokens` (100–4000), model (GPT-4.1, GPT-4o, GPT-4-turbo), and detail level (low, high, medium).
 - **Strict File Validation**: Accepts only JPEG and PNG images, with a 10MB size limit per file and a maximum of 10 images per request.
 - **EXIF Metadata Extraction**: Extracts comprehensive metadata (datetime, GPS, camera details) using PIL, piexif, and exifread for reliability.
 - **Image Quality Scoring**: Computes scores based on brightness, contrast, sharpness, and noise, with detailed metrics.
