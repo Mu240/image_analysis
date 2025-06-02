@@ -42,6 +42,13 @@
         .image-preview img:hover {
             transform: scale(1.05);
         }
+        .error-message {
+            background-color: #fee2e2;
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
     </style>
 </head>
 <body class="min-h-screen">
@@ -49,6 +56,7 @@
         <header class="text-center mb-12">
             <h1 class="text-4xl font-bold text-gray-800 mb-2">🎨 AI Image Analysis Studio</h1>
             <p class="text-lg text-gray-600">Powered by Advanced Vision AI</p>
+            <p id="apiKeyStatus" class="text-sm text-gray-500 mt-1"></p>
         </header>
 
         <section class="bg-white rounded-2xl shadow-lg p-6 mb-8">
@@ -57,10 +65,11 @@
                 <p class="text-3xl">☁️</p>
                 <p class="text-lg font-medium text-gray-700">Drag & Drop Images</p>
                 <p class="text-gray-500">or click to browse</p>
-                <p class="text-sm text-gray-400">Supports: JPG, PNG • Max 10 images</p>
+                <p id="fileConstraints" class="text-sm text-gray-400">Supports: JPG, PNG • Max 10 images</p>
                 <input type="file" id="imageInput" multiple accept="image/jpeg,image/png" class="hidden">
             </div>
             <div id="imagePreviews" class="flex flex-wrap gap-4 mt-4"></div>
+            <div id="uploadError" class="error-message hidden"></div>
         </section>
 
         <section class="bg-white rounded-2xl shadow-lg p-6 mb-8">
@@ -75,11 +84,12 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">User Prompt</label>
-                    <textarea id="userPrompt" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="4">Generate batch-level metadata for a wedding event from these photos. Include event name, subtype, theme, title, location, and activities with times based on EXIF or visual cues.</textarea>
+                    <textarea id="userPrompt" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="4">Analyze these images for a wedding event. For each image, provide location data either from EXIF or by inferring from image content.</textarea>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">System Prompt</label>
-                    <textarea id="systemPrompt" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="6">Generate batch-level metadata for a wedding event from images. Return concise JSON with:
+                    <textarea id="systemPrompt" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="6">
+Generate batch-level metadata for a wedding event from images. Return concise JSON with:
 {
   "eventType": "wedding",
   "eventMetadata": {
@@ -101,39 +111,47 @@
         "name": "string",
         "type": "place | venue | landmark | nature | building | bridge | worship | civic | market",
         "address": "string"
-      }
+      },
+      "imageid": "string"
     }
   ]
 }
 Rules:
-- Focus on batch-level insights.
+- Focus on batch-level insights for event-level analysis.
 - Ensure eventTitle is specific.
-- Use hh:mm AM/PM for estimatedTime.</textarea>
+- Use hh:mm AM/PM for estimatedTime.
+- For each image, if GPS coordinates are provided, use them to determine the precise address for eventLocation.address and eventActivities[].activityLocation.address.
+- If GPS coordinates are not available for an image, analyze the image content to infer the location (e.g., landmarks, signage, environmental cues).
+- For eventLocation, aggregate locations if multiple images have consistent locations; otherwise, select the most representative location or indicate per-image locations in eventActivities.
+                    </textarea>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Detail Level</label>
                     <select id="detailLevel" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                         <option value="low">Low Detail</option>
                         <option value="high">High Detail</option>
-                        <option value="auto">Auto</option>
+                        <option value="medium">Medium Detail</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
                     <select id="model" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                        <option value="gpt-4.1">GPT-4.1</option>
-                        <option value="gpt-4o">GPT-4o</option>
-                        <option value="gpt-4-turbo">GPT-4-turbo</option>
                     </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Tokens</label>
+                    <input type="number" id="maxTokens" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" value="600" min="100" max="4000" required>
+                    <p id="maxTokensError" class="text-red-500 text-sm mt-1 hidden">Max tokens must be between 100 and 4000</p>
                 </div>
                 <button class="analyze-btn bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600" onclick="analyzeImages()">🚀 Analyze</button>
             </div>
+            <div id="settingsError" class="error-message hidden"></div>
         </section>
 
-        <section class="bg-white rounded-2xl shadow-lg p-6" id="resultsSection">
+        <section class="bg-white rounded-2xl shadow-lg p-6 hidden" id="resultsSection">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">📊 Results</h2>
             <div class="flex gap-4 mb-4 border-b border-gray-200">
-                <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('overview')">Overview</div>
+                <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium active" onclick="showTab('overview')">Overview</div>
                 <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('individual')">Individual</div>
                 <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('insights')">Insights</div>
                 <div class="tab px-4 py-2 cursor-pointer text-gray-600 font-medium" onclick="showTab('json')">JSON</div>
@@ -165,29 +183,93 @@ Rules:
     </div>
 
     <script>
+        let config = {
+            maxFileSizeBytes: 10 * 1024 * 1024, // Default 10MB
+            allowedFileTypes: ['image/jpeg', 'image/png'],
+            availableModels: ['gpt-4.1', 'gpt-4o', 'gpt-4-turbo'],
+            maxTokens: 600,
+            maxImages: 10
+        };
+
+        // Fetch configuration from server
+        async function fetchConfig() {
+            try {
+                const response = await fetch('http://localhost:8000/config');
+                const data = await response.json();
+                config.maxTokens = data.max_tokens;
+                document.getElementById('maxTokens').value = data.max_tokens;
+                document.getElementById('maxTokens').max = data.max_tokens;
+                document.getElementById('apiKeyStatus').textContent = 
+                    data.api_key_status.api_key_set 
+                        ? `API Key: ${data.api_key_status.api_key_prefix}...`
+                        : 'API Key: Not configured';
+                
+                // Populate models dropdown
+                const modelSelect = document.getElementById('model');
+                modelSelect.innerHTML = '';
+                config.availableModels.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    modelSelect.appendChild(option);
+                });
+                
+                // Update file constraints display
+                document.getElementById('fileConstraints').textContent = 
+                    `Supports: ${config.allowedFileTypes.join(', ')} • Max ${config.maxImages} images • Max ${config.maxFileSizeBytes / 1024 / 1024}MB per file`;
+            } catch (error) {
+                console.error('Error fetching config:', error);
+                document.getElementById('apiKeyStatus').textContent = 'Error fetching configuration';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', fetchConfig);
+
         const uploadArea = document.getElementById('uploadArea');
         const imageInput = document.getElementById('imageInput');
         const imagePreviews = document.getElementById('imagePreviews');
+        const uploadError = document.getElementById('uploadError');
         let selectedImages = [];
 
         uploadArea.addEventListener('click', () => imageInput.click());
         uploadArea.addEventListener('dragover', (e) => e.preventDefault());
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
-            const files = e.dataTransfer.files;
-            handleFiles(files);
+            handleFiles(e.dataTransfer.files);
         });
         imageInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
         function handleFiles(files) {
-            const allowedTypes = ['image/jpeg', 'image/png'];
-            selectedImages = Array.from(files).filter(file => allowedTypes.includes(file.type)).slice(0, 10);
+            uploadError.classList.add('hidden');
+            const newFiles = Array.from(files)
+                .filter(file => config.allowedFileTypes.includes(file.type))
+                .filter(file => file.size <= config.maxFileSizeBytes);
+            
+            if (newFiles.length !== files.length) {
+                const invalidFiles = Array.from(files).filter(file => 
+                    !config.allowedFileTypes.includes(file.type) || file.size > config.maxFileSizeBytes);
+                uploadError.textContent = `Invalid files: ${invalidFiles.map(f => f.name).join(', ')}. Only ${config.allowedFileTypes.join(', ')} under ${config.maxFileSizeBytes / 1024 / 1024}MB allowed.`;
+                uploadError.classList.remove('hidden');
+            }
+
+            selectedImages = [...selectedImages, ...newFiles].slice(0, config.maxImages);
             imagePreviews.innerHTML = '';
             selectedImages.forEach((file, index) => {
+                const div = document.createElement('div');
+                div.className = 'relative';
                 const img = document.createElement('img');
                 img.src = URL.createObjectURL(file);
                 img.className = 'image-preview w-24 h-24 object-cover rounded-lg';
-                imagePreviews.appendChild(img);
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '✕';
+                removeBtn.className = 'absolute top-0 right-0 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs';
+                removeBtn.onclick = () => {
+                    selectedImages.splice(index, 1);
+                    handleFiles([]);
+                };
+                div.appendChild(img);
+                div.appendChild(removeBtn);
+                imagePreviews.appendChild(div);
             });
         }
 
@@ -199,8 +281,28 @@ Rules:
         }
 
         async function analyzeImages() {
+            const settingsError = document.getElementById('settingsError');
+            const maxTokensError = document.getElementById('maxTokensError');
+            settingsError.classList.add('hidden');
+            maxTokensError.classList.add('hidden');
+
             if (selectedImages.length === 0) {
-                alert('Please upload at least one image.');
+                settingsError.textContent = 'Please upload at least one image.';
+                settingsError.classList.remove('hidden');
+                return;
+            }
+
+            const maxTokens = parseInt(document.getElementById('maxTokens').value);
+            if (maxTokens < 100 || maxTokens > 4000) {
+                maxTokensError.classList.remove('hidden');
+                return;
+            }
+
+            const userPrompt = document.getElementById('userPrompt').value;
+            const systemPrompt = document.getElementById('systemPrompt').value;
+            if (!userPrompt || !systemPrompt) {
+                settingsError.textContent = 'User prompt and system prompt are required.';
+                settingsError.classList.remove('hidden');
                 return;
             }
 
@@ -215,17 +317,22 @@ Rules:
                 loadingProgress.textContent = `${index + 1} of ${selectedImages.length} images`;
             });
 
-            formData.append('user_prompt', document.getElementById('userPrompt').value);
-            formData.append('system_prompt', document.getElementById('systemPrompt').value);
+            formData.append('user_prompt', userPrompt);
+            formData.append('system_prompt', systemPrompt);
             formData.append('detail_level', document.getElementById('detailLevel').value);
             formData.append('event_level', document.getElementById('analysisMode').value === 'event');
             formData.append('model', document.getElementById('model').value);
+            formData.append('max_tokens', maxTokens);
 
             try {
                 const response = await fetch('http://localhost:8000/analyze', {
                     method: 'POST',
                     body: formData
                 });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Analysis failed');
+                }
                 const result = await response.json();
 
                 // Display results
@@ -236,6 +343,8 @@ Rules:
                             <p class="text-gray-700"><strong>Average Quality:</strong> ${result.average_quality}</p>
                             <p class="text-gray-700"><strong>Time Taken:</strong> ${result.time_taken}s</p>
                             <p class="text-gray-700"><strong>Model:</strong> ${result.model}</p>
+                            <p class="text-gray-700"><strong>Token Usage:</strong> Prompt: ${result.token_usage.prompt_tokens}, Completion: ${result.token_usage.completion_tokens}, Total: ${result.token_usage.total_tokens}</p>
+                            <p class="text-gray-700"><strong>Cost:</strong> $${result.cost.total_cost.toFixed(6)}</p>
                         </div>
                     `;
                     document.getElementById('insightsContent').innerHTML = `<pre class="text-sm text-gray-700">${JSON.stringify(result.event_insights, null, 2)}</pre>`;
@@ -243,8 +352,24 @@ Rules:
                         <div class="bg-gray-50 p-4 rounded-lg">
                             <h4 class="text-lg font-semibold text-gray-800">Image: ${analysis.imageid}</h4>
                             <p class="text-gray-700"><strong>Quality Score:</strong> ${analysis.quality_score}</p>
-                            <p class="text-gray-700"><strong>Quality Metrics:</strong> ${JSON.stringify(analysis.quality_metrics, null, 2)}</p>
-                            <p class="text-gray-700"><strong>EXIF Data:</strong> ${JSON.stringify(analysis.exif_data, null, 2)}</p>
+                            <p class="text-gray-700"><strong>Quality Metrics:</strong> <pre>${JSON.stringify(analysis.quality_metrics, null, 2)}</pre></p>
+                            <p class="text-gray-700"><strong>Manipulation Metrics:</strong> <pre>${JSON.stringify(analysis.manipulation_metrics, null, 2)}</pre></p>
+                            <p class="text-gray-700"><strong>EXIF Data:</strong> <pre>${
+                                JSON.stringify({
+                                    datetime: analysis.exif_data.datetime,
+                                    gps_latitude: analysis.exif_data.gps_latitude,
+                                    gps_longitude: analysis.exif_data.gps_longitude,
+                                    camera_make: analysis.exif_data.camera_make,
+                                    camera_model: analysis.exif_data.camera_model,
+                                    orientation: analysis.exif_data.orientation,
+                                    iso: analysis.exif_data.iso,
+                                    focal_length: analysis.exif_data.focal_length,
+                                    aperture: analysis.exif_data.aperture,
+                                    shutter_speed: analysis.exif_data.shutter_speed,
+                                    flash: analysis.exif_data.flash
+                                }, null, 2)
+                            }</pre></p>
+                            <p class="text-gray-700"><strong>Analysis:</strong> <pre>${JSON.stringify(analysis.analysis, null, 2)}</pre></p>
                         </div>
                     `).join('');
                 } else {
@@ -253,23 +378,42 @@ Rules:
                             <p class="text-gray-700"><strong>Total Images:</strong> ${result.analyses.length}</p>
                             <p class="text-gray-700"><strong>Time Taken:</strong> ${result.time_taken}s</p>
                             <p class="text-gray-700"><strong>Model:</strong> ${result.model}</p>
+                            <p class="text-gray-700"><strong>Token Usage:</strong> Prompt: ${result.token_usage.prompt_tokens}, Completion: ${result.token_usage.completion_tokens}, Total: ${result.token_usage.total_tokens}</p>
+                            <p class="text-gray-700"><strong>Cost:</strong> $${result.cost.total_cost.toFixed(6)}</p>
                         </div>
                     `;
                     document.getElementById('individualContent').innerHTML = result.analyses.map(analysis => `
                         <div class="bg-gray-50 p-4 rounded-lg">
                             <h4 class="text-lg font-semibold text-gray-800">Image: ${analysis.imageid}</h4>
                             <p class="text-gray-700"><strong>Quality Score:</strong> ${analysis.quality_score}</p>
-                            <p class="text-gray-700"><strong>Quality Metrics:</strong> ${JSON.stringify(analysis.quality_metrics, null, 2)}</p>
-                            <p class="text-gray-700"><strong>EXIF Data:</strong> ${JSON.stringify(analysis.exif_data, null, 2)}</p>
-                            <p class="text-gray-700"><strong>Analysis:</strong> ${JSON.stringify(analysis.analysis, null, 2)}</p>
+                            <p class="text-gray-700"><strong>Quality Metrics:</strong> <pre>${JSON.stringify(analysis.quality_metrics, null, 2)}</pre></p>
+                            <p class="text-gray-700"><strong>Manipulation Metrics:</strong> <pre>${JSON.stringify(analysis.manipulation_metrics, null, 2)}</pre></p>
+                            <p class="text-gray-700"><strong>EXIF Data:</strong> <pre>${
+                                JSON.stringify({
+                                    datetime: analysis.exif_data.datetime,
+                                    gps_latitude: analysis.exif_data.gps_latitude,
+                                    gps_longitude: analysis.exif_data.gps_longitude,
+                                    camera_make: analysis.exif_data.camera_make,
+                                    camera_model: analysis.exif_data.camera_model,
+                                    orientation: analysis.exif_data.orientation,
+                                    iso: analysis.exif_data.iso,
+                                    focal_length: analysis.exif_data.focal_length,
+                                    aperture: analysis.exif_data.aperture,
+                                    shutter_speed: analysis.exif_data.shutter_speed,
+                                    flash: analysis.exif_data.flash
+                                }, null, 2)
+                            }</pre></p>
+                            <p class="text-gray-700"><strong>Analysis:</strong> <pre>${JSON.stringify(analysis.analysis, null, 2)}</pre></p>
                         </div>
                     `).join('');
                     document.getElementById('insightsContent').innerHTML = '<p class="text-gray-700">Individual analysis mode - check Individual tab.</p>';
                 }
                 document.getElementById('jsonContent').textContent = JSON.stringify(result, null, 2);
                 document.getElementById('resultsSection').classList.remove('hidden');
+                showTab('overview');
             } catch (error) {
-                alert('Error analyzing images: ' + error.message);
+                settingsError.textContent = `Error analyzing images: ${error.message}`;
+                settingsError.classList.remove('hidden');
             } finally {
                 loading.classList.add('hidden');
             }
