@@ -65,7 +65,7 @@
                 <p class="text-3xl">☁️</p>
                 <p class="text-lg font-medium text-gray-700">Drag & Drop Images</p>
                 <p class="text-gray-500">or click to browse</p>
-                <p id="fileConstraints" class="text-sm text-gray-400">Supports: JPG, PNG • Max 10 images</p>
+                <p id="fileConstraints" class="text-sm text-gray-400"></p>
                 <input type="file" id="imageInput" multiple accept="image/jpeg,image/png" class="hidden">
             </div>
             <div id="imagePreviews" class="flex flex-wrap gap-4 mt-4"></div>
@@ -183,27 +183,23 @@ Rules:
     </div>
 
     <script>
+        // Hardcoded API key (in production, fetch securely from backend or environment)
+        const API_KEY = "your-custom-api-key";
+
         let config = {
-            maxFileSizeBytes: 10 * 1024 * 1024, // Default 10MB
+            maxFileSizeBytes: 10 * 1024 * 1024, // 10MB
             allowedFileTypes: ['image/jpeg', 'image/png'],
             availableModels: ['gpt-4.1', 'gpt-4o', 'gpt-4-turbo'],
             maxTokens: 600,
             maxImages: 10
         };
 
-        // Fetch configuration from server
-        async function fetchConfig() {
+        // Initialize configuration and UI
+        function initConfig() {
             try {
-                const response = await fetch('http://localhost:8000/config');
-                const data = await response.json();
-                config.maxTokens = data.max_tokens;
-                document.getElementById('maxTokens').value = data.max_tokens;
-                document.getElementById('maxTokens').max = data.max_tokens;
-                document.getElementById('apiKeyStatus').textContent = 
-                    data.api_key_status.api_key_set 
-                        ? `API Key: ${data.api_key_status.api_key_prefix}...`
-                        : 'API Key: Not configured';
-                
+                // Set API key status
+                document.getElementById('apiKeyStatus').textContent = `API Key: ${API_KEY.slice(0, 8)}...`;
+
                 // Populate models dropdown
                 const modelSelect = document.getElementById('model');
                 modelSelect.innerHTML = '';
@@ -213,17 +209,17 @@ Rules:
                     option.textContent = model;
                     modelSelect.appendChild(option);
                 });
-                
+
                 // Update file constraints display
                 document.getElementById('fileConstraints').textContent = 
                     `Supports: ${config.allowedFileTypes.join(', ')} • Max ${config.maxImages} images • Max ${config.maxFileSizeBytes / 1024 / 1024}MB per file`;
             } catch (error) {
-                console.error('Error fetching config:', error);
-                document.getElementById('apiKeyStatus').textContent = 'Error fetching configuration';
+                console.error('Error initializing config:', error);
+                document.getElementById('apiKeyStatus').textContent = 'Error initializing configuration';
             }
         }
 
-        document.addEventListener('DOMContentLoaded', fetchConfig);
+        document.addEventListener('DOMContentLoaded', initConfig);
 
         const uploadArea = document.getElementById('uploadArea');
         const imageInput = document.getElementById('imageInput');
@@ -327,6 +323,9 @@ Rules:
             try {
                 const response = await fetch('http://localhost:8000/analyze', {
                     method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
                     body: formData
                 });
                 if (!response.ok) {
