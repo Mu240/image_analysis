@@ -61,10 +61,12 @@ htmlcov/
 bin/
 Scripts/
 
-# Ignore uploaded images or other user-generated content
+# Flask-specific ignores
+flask_session/
+
+# Project-specific directories
 uploads/
-images/
-media/
+reports/
 
 # Ignore compiled or minified assets
 *.min.js
@@ -78,6 +80,5 @@ secrets.json
 *.secret
 
 # Explicitly track the specified project files
-!index.html
-!image_analysis.py
-!server.py
+!main.py
+!requirements.txt
